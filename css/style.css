@@ -200,6 +200,10 @@ body.has-rest #view { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bo
 .empty h3 { color: var(--text); font-size: 17px; }
 .empty .btn, .empty .row-btns { margin-top: 8px; }
 .empty.small { padding: 20px 16px; }
+.prose { display: flex; flex-direction: column; gap: 8px; }
+.prose > h3 { margin-bottom: 0; }
+.prose p { color: var(--text-2); }
+.prose strong { color: var(--text); font-weight: 600; }
 .hint { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .hint p { color: var(--text-2); }
 

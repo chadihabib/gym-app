@@ -26,7 +26,34 @@
         <div class="sec-head"><h2>App</h2></div>
         <div class="card list">
           ${link('#/settings', icon.gear, 'Einstellungen', 'Ziele, Pausenzeit, Darstellung, Datensicherung')}
+          ${link('#/privacy', icon.shield, 'Datenschutz', 'Deine Daten bleiben auf diesem Gerät')}
         </div>`,
+    }),
+  }));
+
+  /* ---------- Datenschutz ---------- */
+  Gym.route('/privacy', 'more', () => ({
+    html: Gym.page({
+      title: 'Datenschutz', back: '#/more', smartBack: true,
+      body: `
+        <section class="card prose">
+          <h3>Deine Daten bleiben bei dir</h3>
+          <p>Trainings, Körperwerte, Routinen und Einstellungen speichert die App <strong>nur auf diesem Gerät</strong>, im Speicher deines Browsers. Sie werden an keinen Server übertragen, auch nicht an den Entwickler der App.</p>
+          <p>Die App setzt <strong>keine Cookies</strong>, nutzt <strong>kein Tracking</strong> und keine Werbung und lädt keine Inhalte von Drittanbietern.</p>
+        </section>
+        <section class="card prose">
+          <h3>Hosting</h3>
+          <p>Die App liegt bei <strong>GitHub Pages</strong> (GitHub, Inc.). Wenn du sie aufrufst, übermittelt dein Browser wie bei jeder Webseite technische Angaben wie die IP-Adresse an GitHub. Wie GitHub damit umgeht, steht in der <a href="https://docs.github.com/de/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener noreferrer">Datenschutzerklärung von GitHub</a>.</p>
+          <p>Ist die App auf deinem Gerät installiert, startet sie aus dem Offline-Speicher. Beim Start fragt sie trotzdem bei GitHub nach einer neuen Version, sofern Internet da ist.</p>
+        </section>
+        <section class="card prose">
+          <h3>Sichern und löschen</h3>
+          <p>Weil nichts auf einem Server liegt, gibt es auch keine Kopie deiner Daten. Unter <a href="#/settings">Einstellungen</a> kannst du eine Sicherung als Datei herunterladen oder alle Daten löschen. Deinstallierst du die App oder löschst du die Browserdaten dieser Seite, sind die Daten ebenfalls weg.</p>
+        </section>
+        <section class="card prose">
+          <h3>Gesundheitswerte</h3>
+          <p>Der 1RM- und der Kalorienrechner liefern Richtwerte nach gängigen Formeln. Sie ersetzen keine ärztliche oder ernährungsfachliche Beratung.</p>
+        </section>`,
     }),
   }));
 
@@ -384,7 +411,7 @@
           </div>
           <div class="sec-head"><h2>Daten</h2></div>
           <div class="card">
-            <p class="muted small">Alle Daten liegen nur in diesem Browser auf diesem Gerät. Sichere sie regelmäßig als Datei, vor allem bevor du Browserdaten löschst.</p>
+            <p class="muted small">Alle Daten liegen nur in diesem Browser auf diesem Gerät und werden nirgendwohin übertragen (<a href="#/privacy">Datenschutz</a>). Sichere sie regelmäßig als Datei, vor allem bevor du Browserdaten löschst.</p>
             <div class="menu">
               <button class="list-item" data-act="exportJson">${icon.download}<span class="li-main"><strong>Sicherung herunterladen</strong><small>Alle Daten als JSON-Datei</small></span></button>
               <button class="list-item" data-act="importPick">${icon.upload}<span class="li-main"><strong>Sicherung einspielen</strong><small>Ersetzt die aktuellen Daten</small></span></button>

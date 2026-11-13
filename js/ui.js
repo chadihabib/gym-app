@@ -38,6 +38,7 @@
     calendar: I('<rect x="3.500" y="5" width="17" height="15" rx="2"/><path d="M3.500 10h17M8 3v4M16 3v4"/>'),
     download: I('<path d="M12 4v11M7.500 11l4.500 4.500 4.500-4.500M5 20h14"/>'),
     upload: I('<path d="M12 15.500V4.500M7.500 9L12 4.500 16.500 9M5 20h14"/>'),
+    shield: I('<path d="M12 3l7.500 3v5.500c0 4.500-3.200 8.200-7.500 9.500-4.300-1.300-7.500-5-7.500-9.500V6z"/><path d="M8.800 12l2.200 2.200 4.200-4.200"/>'),
   });
 
   /* ---------- Seitengerüst ---------- */
@@ -259,6 +260,7 @@
 
   let restDoneUntil = 0;
   Gym.tick = () => {
+    if (!Gym.S) return; // Daten noch nicht geladen
     const now = Date.now();
     // Laufzeit des aktiven Trainings
     const a = Gym.S.active;
