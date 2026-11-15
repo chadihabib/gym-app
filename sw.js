@@ -1,10 +1,10 @@
 /* Service Worker: Netz zuerst, bei fehlender Verbindung aus dem Cache */
-const CACHE = 'gymapp-v8';
+const CACHE = 'gymapp-v9';
 const FILES = [
   './', 'index.html', 'css/style.css', 'icon.svg', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
   'js/data.js', 'js/core.js', 'js/charts.js', 'js/ui.js',
-  'js/views-workout.js', 'js/views-progress.js', 'js/views-more.js', 'js/app.js',
+  'js/views-workout.js', 'js/views-progress.js', 'js/views-more.js', 'js/views-plan.js', 'js/app.js',
 ];
 
 self.addEventListener('install', (e) => {

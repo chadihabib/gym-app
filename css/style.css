@@ -446,3 +446,30 @@ input.set-in { min-height: 40px; padding: 4px; font-weight: 600; font-variant-nu
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- Trainingsplan ---------- */
+.plan-next { display: flex; align-items: center; gap: 12px; }
+.plan-next .li-main strong { font-size: 17px; font-weight: 650; }
+.plan-strip { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
+.plan-strip-head { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 550; color: var(--text-2); }
+.plan-strip-head .ic { width: 15px; height: 15px; color: var(--muted); }
+.plan-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pchip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 8px; background: var(--surface-2); font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.pchip b { color: var(--text); font-weight: 650; }
+.pchip .ic { width: 13px; height: 13px; color: var(--good-text); }
+.slot-n { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--surface-2); color: var(--text-2); font-weight: 650; font-size: 13.5px; flex: none; }
+.slot-n.on { background: var(--btn); color: #fff; }
+.sec-head .btn.text { min-height: 28px; padding: 0; color: var(--accent); }
+.vol-card { display: flex; flex-direction: column; gap: 12px; }
+.vol-card .sub { font-size: 12.5px; color: var(--muted); }
+.vol { display: flex; flex-direction: column; gap: 8px; }
+.vol-row { display: grid; grid-template-columns: 78px minmax(0, 1fr) 84px; align-items: center; gap: 10px; font-size: 13.5px; }
+.vol-track { position: relative; display: block; height: 22px; border-left: 1px solid var(--axis); }
+.vol-zone { position: absolute; top: 0; bottom: 0; background: var(--surface-2); border-left: 1px solid var(--axis); border-right: 1px solid var(--axis); }
+.vol-fill { position: absolute; left: 0; top: 5px; height: 12px; border-radius: 0 4px 4px 0; background: var(--series-1); }
+.vol-val { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vol-val b { display: inline-flex; align-items: center; gap: 4px; font-weight: 650; }
+.vol-val .ic { width: 14px; height: 14px; color: var(--good-text); }
+.vol-val small { font-size: 11.5px; color: var(--muted); }
+.vol-legend { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.vol-legend i { flex: none; width: 18px; height: 12px; background: var(--surface-2); border-left: 1px solid var(--axis); border-right: 1px solid var(--axis); }

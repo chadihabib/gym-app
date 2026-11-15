@@ -67,6 +67,7 @@
 
   const startSection = () => `
     ${gymPicker()}
+    ${Gym.planCard()}
     ${typeGrid()}
     <div class="sec-head"><h2>Aus Routine starten</h2><a href="#/routines">Verwalten</a></div>
     ${Gym.S.routines.length ? Gym.S.routines.map(routineCard).join('') : `<p class="muted">Noch keine Routinen. <a href="#/routine/new">Routine anlegen</a></p>`}`;
@@ -208,6 +209,7 @@
     Gym.act.coachReset = () => { delete S.exCoach[ex.id]; Gym.save(); Gym.closeModal(); Gym.render(); };
     const src = cfg.src === 'own' ? 'Von dir für diese Übung festgelegt.'
       : cfg.src === 'routine' ? 'Bereich aus der Routine übernommen, Gewichtsschritt aus deinem Verlauf geschätzt.'
+      : cfg.src === 'plan' ? `Bereich aus dem Trainingsplan (${Gym.LOAD[co.load].day}). Speicherst du eigene Werte, gelten sie für diese Übung an allen Tagen.`
       : 'Aus deinen letzten Trainings erkannt. Du kannst die Werte anpassen.';
     Gym.modal({
       title: 'Vorschlag: ' + ex.name,
@@ -271,6 +273,17 @@
         ${en.sets.length > 1 ? `<button class="btn sm ghost" data-act="setDel" data-e="${ei}">${icon.minus} Satz</button>` : ''}
       </div>
     </section>`;
+  };
+
+  // Nur mit Trainingsplan: Sätze je Muskelgruppe, abgehakt und Ziel für heute
+  const planStrip = (w) => {
+    const ps = Gym.planSession(w);
+    if (!ps) return '';
+    const ld = Gym.LOAD[ps.slot.load];
+    return `<div class="plan-strip">
+      <span class="plan-strip-head">${icon.calendar}<span>Plan: Sätze heute${ld ? ` · ${ld.day}, Grundübungen ${ld.range[0]}–${ld.range[1]} Wdh.` : ''}</span></span>
+      <span class="plan-chips">${ps.muscles.map((x) => `<span class="pchip">${esc(x.m)} <b>${esc(fmt.num(x.done, 1))}/${x.target}</b>${x.done >= x.target ? icon.check + '<span class="sr">geschafft</span>' : ''}</span>`).join('')}</span>
+    </div>`;
   };
 
   const DEFAULT_NAMES = ['Morgentraining', 'Training am Mittag', 'Abendtraining', 'Training'];
@@ -430,6 +443,7 @@
             <button class="chip gym-chip ${w.gymId && Gym.gym(w.gymId) ? '' : 'dashed'}" data-act="wkGym">${icon.pin}${esc(Gym.gymName(w.gymId) || 'Gym wählen')}</button>
             <button class="chip type-chip ${Gym.workoutType(w) ? '' : 'dashed'}" data-act="wkType">${icon.dumbbell}${esc(Gym.workoutType(w) ? Gym.type(Gym.workoutType(w)).label : 'Art wählen')}</button>
           </div>
+          ${planStrip(w)}
           ${editorBody(w, 'live')}
           <button class="btn block text danger" data-act="wkDiscard">Training verwerfen</button>
         </div>`,
@@ -480,6 +494,12 @@
     }
     clean.end = Date.now();
     clean.name = (clean.name || '').trim() || 'Training';
+    // Mit Trainingsplan: Platz abhaken, schweren oder leichten Tag am Training vermerken
+    const slot = Gym.planSlot(clean);
+    if (slot) {
+      if (slot.load) clean.load = slot.load;
+      S.plan.pos = (slot.idx + 1) % S.plan.slots.length;
+    }
     S.workouts.push(clean);
     S.active = null; S.rest = null;
     Gym.recomputePRs();
@@ -596,7 +616,7 @@
     }).join('');
     const body = `
       ${fresh ? `<div class="card done-banner">${icon.trophy}<div><h2>Stark, Training geschafft!</h2><p>${prs.length ? `Du hast ${prs.length} ${prs.length === 1 ? 'neuen Rekord' : 'neue Rekorde'} aufgestellt.` : 'Alles ist gespeichert.'}</p></div></div>` : ''}
-      <p class="muted">${esc(fmt.long(w.start))} · ${esc(fmt.time(w.start))} Uhr${Gym.gymName(w.gymId) ? ' · ' + esc(Gym.gymName(w.gymId)) : ''}</p>
+      <p class="muted">${esc(fmt.long(w.start))} · ${esc(fmt.time(w.start))} Uhr${Gym.gymName(w.gymId) ? ' · ' + esc(Gym.gymName(w.gymId)) : ''}${Gym.LOAD[w.load] ? ' · ' + Gym.LOAD[w.load].day : ''}</p>
       <div class="tiles">
         ${tile('Dauer', esc(fmt.dur(Gym.wDur(w))))}
         ${tile('Volumen', esc(fmt.kg(Gym.wVolume(w))))}

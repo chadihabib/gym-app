@@ -96,6 +96,20 @@
   ];
   Gym.LIBRARY = lib.map(([id, name, muscle, equip, kind]) => ({ id, name, muscle, equip, kind: kind || 'weight' }));
 
+  // Muskelgruppen, die bei einer Übung mitarbeiten. Ihre Sätze zählen in der Wochenübersicht des
+  // Trainingsplans halb. Übungen mit einem Eintrag gelten als Grundübungen.
+  const SCH = 'Schultern', TRI = 'Trizeps', BIZ = 'Bizeps', GES = 'Gesäß';
+  Gym.SECONDARY = {
+    bankdruecken: [SCH, TRI], schraegbank: [SCH, TRI], 'kh-bankdruecken': [SCH, TRI], 'kh-schraegbank': [SCH, TRI],
+    brustpresse: [SCH, TRI], liegestuetze: [SCH, TRI], dips: [SCH, TRI],
+    kreuzheben: ['Beine', GES], klimmzuege: [BIZ], latzug: [BIZ], 'lh-rudern': [BIZ], 'kh-rudern': [BIZ],
+    kabelrudern: [BIZ], 'tbar-rudern': [BIZ], rudermaschine: [BIZ],
+    schulterdruecken: [TRI], 'kh-schulterdruecken': [TRI], schulterpresse: [TRI],
+    'enges-bankdruecken': ['Brust', SCH],
+    kniebeugen: [GES], frontkniebeugen: [GES], beinpresse: [GES], hackenschmidt: [GES], ausfallschritte: [GES],
+    bulgarian: [GES], 'goblet-squat': [GES], 'rum-kreuzheben': [GES], 'hip-thrust': ['Beine'],
+  };
+
   Gym.defaultRoutines = () => [
     { id: 'r-push', name: 'Push (Brust, Schultern, Trizeps)', items: [
       { exId: 'bankdruecken', sets: 4, reps: '6–8' },

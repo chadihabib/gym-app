@@ -11,6 +11,7 @@
     gyms: [],       // [{ id, name }]
     exBound: {},    // Übung -> true/false: nur im selben Gym vergleichen (überschreibt die Vorgabe)
     exCoach: {},    // Übung -> { min, max, step }: eigener Wiederholungsbereich und Gewichtsschritt
+    plan: null,     // freiwilliger Trainingsplan: { days, level, wave, slots: [{ type, load }], pos }
     customExercises: [],
     routines: null,
     workouts: [],
@@ -219,7 +220,7 @@
       if (!Gym.inGym(w, gymFilter)) continue;
       const sets = [];
       for (const en of w.entries) if (en.exId === exId) sets.push(...en.sets);
-      if (sets.length) out.push({ ts: w.start, wid: w.id, name: w.name, gymId: w.gymId || null, sets, m: Gym.sessionMetrics(ex, sets) });
+      if (sets.length) out.push({ ts: w.start, wid: w.id, name: w.name, gymId: w.gymId || null, load: w.load || null, sets, m: Gym.sessionMetrics(ex, sets) });
     }
     return out;
   };
@@ -319,17 +320,21 @@
   const BANDS = [[3, 5], [5, 8], [8, 12], [12, 15], [15, 20]];
   const STEP_BY_EQUIP = { Langhantel: 2.5, Kurzhantel: 2, Maschine: 5, Kabel: 2.5, Kettlebell: 4 };
   const round2 = (v) => Math.round(v * 100) / 100;
+  const TARGET_RE = /^\s*(\d+)(?:\s*[–-]\s*(\d+))?\s*$/;
 
   // Wiederholungsbereich und Gewichtsschritt einer Übung.
-  // Quelle: selbst festgelegt ('own'), Ziel der Routine ('routine') oder aus dem Verlauf erkannt ('auto')
-  Gym.coachCfg = (ex, en, hist) => {
+  // Quelle: selbst festgelegt ('own'), Ziel der Routine ('routine'), schwerer oder leichter Tag
+  // laut Trainingsplan ('plan') oder aus dem Verlauf erkannt ('auto')
+  Gym.coachCfg = (ex, en, hist, load) => {
     const own = Gym.S.exCoach[ex.id] || {};
     let min = own.min, max = own.max, src = 'own';
     if (!(min > 0 && max >= min)) {
-      const m = en && en.target ? String(en.target).match(/^\s*(\d+)(?:\s*[–-]\s*(\d+))?\s*$/) : null;
+      const m = en && en.target ? String(en.target).match(TARGET_RE) : null;
       if (m) {
         min = +m[1]; max = +(m[2] || m[1]); src = 'routine';
         if (max < min) [min, max] = [max, min];
+      } else if (load) {
+        [min, max] = Gym.LOAD[load].range; src = 'plan';
       } else {
         // Band, in dem die üblichen Wiederholungen der letzten drei Trainings liegen (nur Arbeitssätze)
         const reps = [];
@@ -364,25 +369,50 @@
   Gym.coach = (ex, en, w) => {
     if (Gym.S.settings.coach === false) return null;
     if (ex.kind !== 'weight' && ex.kind !== 'body') return null;
-    const hist = Gym.exerciseHistory(ex.id, Gym.cmpGym(ex, w)).filter((h) => h.wid !== w.id);
-    if (!hist.length) return null;
+    const all = Gym.exerciseHistory(ex.id, Gym.cmpGym(ex, w)).filter((h) => h.wid !== w.id);
+    if (!all.length) return null;
+    // Schwerer oder leichter Tag laut Trainingsplan: Verglichen wird nur mit Trainings derselben Sorte,
+    // weil zu 6 und zu 12 Wiederholungen verschiedene Gewichte gehören.
+    const load = Gym.coachLoad(ex, en, w);
+    let hist = load ? all.filter((h) => h.load === load) : all;
+    const cfg = Gym.coachCfg(ex, en, all, load);
+    const n = (v) => Gym.fmt.num(v, 2);
+    const range = cfg.min === cfg.max ? `${cfg.min}` : `${cfg.min}–${cfg.max}`;
+    // Standard: Jeder Satz ging ans Limit. Ist ein Satz als „nicht am Limit“ markiert (s.rir),
+    // zählt die geschätzte Reserve mit: 1–2 übrig = +1, 3 oder mehr übrig = +3 Wiederholungen.
+    const eff = (s) => s.r + (s.rir === 4 ? 3 : s.rir === 2 ? 1 : 0);
+    const loadNote = load ? ` Laut Plan ist heute ein ${Gym.LOAD[load].label}er Tag: Grundübungen mit ${range} Wiederholungen.` : '';
+    // Für diese Sorte Tag gibt es noch kein Training. Lag das letzte Training ohnehin schon in diesem
+    // Bereich, zählt es wie üblich. Sonst wird das Gewicht daraus geschätzt (Epley).
+    const prev = all[all.length - 1];
+    if (!hist.length) {
+      const ps = prev.sets.filter((s) => s.r > 0);
+      const first = ps.find((s) => (s.w || 0) === Math.max(...ps.map((x) => x.w || 0)));
+      if (first && eff(first) >= cfg.min && eff(first) <= cfg.max) hist = [prev];
+    }
+    if (!hist.length) {
+      const e =Math.max(0, ...prev.sets.filter((s) => s.r > 0).map((s) => Gym.e1rm(s.w || 0, eff(s))));
+      if (!(e > 0)) return null;
+      const r = cfg.min + 1;
+      // 5 % Abschlag, weil die Formel über verschiedene Wiederholungsbereiche hinweg ungenau ist
+      const weight = round2(Math.max(cfg.step, Math.floor((e * 0.95) / (1 + r / 30) / cfg.step) * cfg.step));
+      return {
+        kind: 'est', weight, cfg, range, load, last: prev, planAt: () => ({ w: weight, r }),
+        text: `Etwa ${n(weight)} kg zum Einstieg`,
+        why: `Für einen ${Gym.LOAD[load].label}en Tag gibt es bei dieser Übung noch kein Training. Das Gewicht ist aus deinem letzten Training geschätzt und eher vorsichtig gewählt. Ab dem nächsten ${Gym.LOAD[load].label}en Tag rechnet die App mit deinen echten Werten.${loadNote}`,
+      };
+    }
     const last = hist[hist.length - 1];
     const sets = last.sets.filter((s) => s.r > 0);
     if (!sets.length) return null;
-    const cfg = Gym.coachCfg(ex, en, hist);
-    const n = (v) => Gym.fmt.num(v, 2);
     // Arbeitssätze sind die Sätze mit dem höchsten Gewicht; leichtere gelten als Aufwärmen
     const top = (list) => Math.max(...list.map((s) => s.w || 0));
     const W = top(sets);
     const isWork = (s) => (s.w || 0) === W;
-    // Standard: Jeder Satz ging ans Limit. Ist ein Satz als „nicht am Limit“ markiert (s.rir),
-    // zählt die geschätzte Reserve mit: 1–2 übrig = +1, 3 oder mehr übrig = +3 Wiederholungen.
-    const eff = (s) => s.r + (s.rir === 4 ? 3 : s.rir === 2 ? 1 : 0);
     const work = sets.filter(isWork);
     const reps = work.map(eff);
     const capped = reps.map((r) => Math.min(r, cfg.max));
     const held = work.some((s) => s.rir);
-    const range = cfg.min === cfg.max ? `${cfg.min}` : `${cfg.min}–${cfg.max}`;
     let kind, weight = W, target, text, why;
     // Maßgeblich ist der erste Arbeitssatz: Wer bis ans Limit trainiert, schafft in späteren Sätzen
     // fast immer weniger. Gesteigert wird, wenn der erste Satz oben ist und keiner unter dem Bereich liegt.
@@ -431,11 +461,12 @@
       }
     }
     if (held) why += ' Eingerechnet ist, dass du nicht in jedem Satz am Limit warst.';
+    why += loadNote;
     // Plan je Satz: Arbeitssätze bekommen das Ziel, leichtere Sätze bleiben wie beim letzten Mal
     let wi = 0;
     const plan = sets.map((s) => (isWork(s) ? { w: W ? weight : s.w, r: target[Math.min(wi++, target.length - 1)] } : { w: s.w, r: s.r }));
     const rest = { w: W ? weight : null, r: target[target.length - 1] };
-    return { kind, weight, text, why, cfg, range, last, planAt: (i) => plan[i] || rest };
+    return { kind, weight, text, why, cfg, range, load, last, planAt: (i) => plan[i] || rest };
   };
 
   /* ---------- Trainingsarten und Vorschläge ---------- */
@@ -495,6 +526,111 @@
     let fresh = false;
     if (!list.length) { fresh = true; list = t.starter.map((exId) => ({ exId, n: 0, last: 0, here: false })); }
     return { type: t, fresh, useGym, list: list.filter((st) => !have.has(st.exId)).slice(0, 8), last: here[0] || all[0] || null, lastHere: !!here[0] };
+  };
+
+  /* ---------- Trainingsplan (freiwillig) ---------- */
+  // Der Plan legt nur die Reihenfolge der Trainingsarten und ein Wochenziel an Sätzen fest.
+  // Die Übungen bleiben frei. Ohne Plan (S.plan = null) ist nirgends etwas davon zu sehen.
+  Gym.MAIN_MUSCLES = ['Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps', 'Beine'];
+  // Richtwert: Sätze je Muskelgruppe und Woche
+  Gym.PLAN_LEVELS = [
+    { id: 'beginner', label: 'Einsteiger', sub: 'unter 1 Jahr Training', sets: [6, 10] },
+    { id: 'mid', label: 'Fortgeschritten', sub: '1 bis 3 Jahre Training', sets: [10, 16] },
+    { id: 'adv', label: 'Erfahren', sub: 'über 3 Jahre Training', sets: [14, 20] },
+  ];
+  // Aufteilungen je Zahl der Trainingstage; die erste ist die Empfehlung
+  Gym.PLAN_SPLITS = {
+    2: [['full', 'full'], ['upper', 'legs']],
+    3: [['full', 'full', 'full'], ['push', 'pull', 'legs']],
+    4: [['upper', 'legs', 'upper', 'legs'], ['push', 'pull', 'push', 'pull']],
+    5: [['push', 'pull', 'legs', 'upper', 'legs'], ['push', 'pull', 'legs', 'push', 'pull']],
+    6: [['push', 'pull', 'legs', 'push', 'pull', 'legs'], ['push', 'pull', 'push', 'pull', 'push', 'pull']],
+  };
+  // Schwere und leichte Tage: Wiederholungsbereich für Grundübungen
+  Gym.LOAD = {
+    heavy: { label: 'schwer', day: 'Schwerer Tag', range: [5, 8] },
+    light: { label: 'leicht', day: 'Leichter Tag', range: [10, 15] },
+  };
+  Gym.planLevel = (p) => Gym.PLAN_LEVELS.find((l) => l.id === p.level) || Gym.PLAN_LEVELS[1];
+  // Hauptmuskelgruppen einer Trainingsart (nur für sie gibt es ein Satz-Ziel)
+  Gym.planMuscles = (type) => { const t = Gym.type(type); return t ? (t.muscles || Gym.MAIN_MUSCLES).filter((m) => Gym.MAIN_MUSCLES.includes(m)) : []; };
+  // Kommt eine Art mehrmals vor, wechseln sich auf Wunsch schwere und leichte Tage ab
+  Gym.planSlots = (types, wave) => {
+    const seen = {};
+    return types.map((type) => {
+      const k = (seen[type] = (seen[type] || 0) + 1);
+      const many = types.filter((t) => t === type).length > 1;
+      return { type, load: wave && many ? (k % 2 ? 'heavy' : 'light') : null };
+    });
+  };
+  Gym.makePlan = ({ days, types, level, wave }) => ({ days, level, wave: !!wave, slots: Gym.planSlots(types, wave), pos: 0, created: Date.now() });
+
+  // Ziel je Muskelgruppe: Sätze pro Woche (lo–hi), Häufigkeit pro Woche und Sätze pro Training
+  Gym.planTargets = (p) => {
+    const [lo, hi] = Gym.planLevel(p).sets, out = {};
+    for (const m of Gym.MAIN_MUSCLES) {
+      const freq = p.slots.length ? (p.slots.filter((s) => Gym.planMuscles(s.type).includes(m)).length / p.slots.length) * p.days : 0;
+      if (freq > 0) out[m] = { lo, hi, freq, session: Math.min(10, Math.max(2, Math.round((lo + hi) / 2 / freq))) };
+    }
+    return out;
+  };
+
+  // Das Training, das laut Plan als Nächstes dran ist
+  Gym.planNext = () => {
+    const p = Gym.S.plan;
+    if (!p || !p.slots.length) return null;
+    const idx = (((p.pos | 0) % p.slots.length) + p.slots.length) % p.slots.length;
+    return { idx, type: p.slots[idx].type, load: p.slots[idx].load || null };
+  };
+  // Platz im Plan, zu dem ein Training gehört: der nächste Platz mit derselben Trainingsart
+  Gym.planSlot = (w) => {
+    const next = Gym.planNext(), t = next && w ? Gym.workoutType(w) : null;
+    if (!t) return null;
+    const slots = Gym.S.plan.slots;
+    for (let k = 0; k < slots.length; k++) {
+      const idx = (next.idx + k) % slots.length;
+      if (slots[idx].type === t) return { idx, type: t, load: slots[idx].load || null };
+    }
+    return null;
+  };
+  // Schwerer oder leichter Tag für diese Übung? Nur Grundübungen mit Gewicht, und nur wenn weder
+  // ein eigener Bereich noch ein Ziel aus der Routine festgelegt ist.
+  Gym.coachLoad = (ex, en, w) => {
+    if (!Gym.S.plan || ex.kind !== 'weight' || !Gym.SECONDARY[ex.id]) return null;
+    const own = Gym.S.exCoach[ex.id];
+    if (own && own.min > 0 && own.max >= own.min) return null;
+    if (en && en.target && TARGET_RE.test(String(en.target))) return null;
+    const slot = Gym.planSlot(w);
+    return slot && Gym.LOAD[slot.load] ? slot.load : null;
+  };
+
+  // Sätze je Muskelgruppe. Mitarbeitende Muskeln zählen halb, Aufwärmsätze (unter 60 % des
+  // Höchstgewichts der Übung) zählen nicht.
+  Gym.countSets = (entries, out, onlyDone) => {
+    out = out || {};
+    for (const en of entries) {
+      const ex = Gym.ex(en.exId);
+      if (ex.kind !== 'weight' && ex.kind !== 'body') continue;
+      const sets = en.sets.filter((s) => s.r > 0 && (!onlyDone || s.done));
+      const top = ex.kind === 'weight' ? Math.max(0, ...sets.map((s) => s.w || 0)) : 0;
+      const n = sets.filter((s) => (s.w || 0) >= top * 0.6).length;
+      if (!n) continue;
+      out[ex.muscle] = (out[ex.muscle] || 0) + n;
+      for (const m of Gym.SECONDARY[ex.id] || []) out[m] = (out[m] || 0) + n / 2;
+    }
+    return out;
+  };
+  Gym.muscleSets = (from, to) => {
+    const out = {};
+    for (const w of Gym.S.workouts) if (w.start >= from && w.start < to) Gym.countSets(w.entries, out);
+    return out;
+  };
+  // Laufendes Training im Plan: Platz und Sätze je Muskelgruppe (abgehakt / Ziel für heute)
+  Gym.planSession = (w) => {
+    const slot = Gym.planSlot(w);
+    if (!slot) return null;
+    const tg = Gym.planTargets(Gym.S.plan), done = Gym.countSets(w.entries, {}, true);
+    return { slot, muscles: Gym.planMuscles(slot.type).filter((m) => tg[m]).map((m) => ({ m, target: tg[m].session, done: done[m] || 0 })) };
   };
 
   /* ---------- Trainings anlegen ---------- */

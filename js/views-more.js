@@ -12,7 +12,8 @@
       title: 'Mehr',
       body: `
         <div class="card list">
-          ${link('#/routines', icon.list, 'Routinen', 'Trainingspläne anlegen und starten')}
+          ${link('#/routines', icon.list, 'Routinen', 'Feste Übungslisten anlegen und starten')}
+          ${link('#/plan', icon.calendar, 'Trainingsplan', Gym.S.plan ? 'Aktiv: ' + Gym.S.plan.slots.map((s) => (Gym.type(s.type) || {}).label).join(' · ') : 'Freiwillig: Reihenfolge und Sätze pro Woche')}
           ${link('#/exercises', icon.dumbbell, 'Übungen', 'Bibliothek, Bestwerte und Verlauf je Übung')}
           ${link('#/gyms', icon.pin, 'Gyms', 'Studios anlegen und Trainings zuordnen')}
           ${link('#/body', icon.scale, 'Körperwerte', 'Gewicht, Körperfett und Maße verfolgen')}
