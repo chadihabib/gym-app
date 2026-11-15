@@ -14,6 +14,7 @@
         <div class="card list">
           ${link('#/routines', icon.list, 'Routinen', 'Trainingspläne anlegen und starten')}
           ${link('#/exercises', icon.dumbbell, 'Übungen', 'Bibliothek, Bestwerte und Verlauf je Übung')}
+          ${link('#/gyms', icon.pin, 'Gyms', 'Studios anlegen und Trainings zuordnen')}
           ${link('#/body', icon.scale, 'Körperwerte', 'Gewicht, Körperfett und Maße verfolgen')}
         </div>
         <div class="sec-head"><h2>Tools</h2></div>
@@ -56,6 +57,69 @@
         </section>`,
     }),
   }));
+
+  /* ---------- Gyms ---------- */
+  Gym.route('/gyms', 'more', () => {
+    const S = Gym.S;
+    const n = (id) => S.workouts.filter((w) => w.gymId === id).length;
+    const none = S.workouts.filter((w) => !Gym.gym(w.gymId)).length;
+    const cur = Gym.currentGymId();
+    return {
+      html: Gym.page({
+        title: 'Gyms', back: '#/more',
+        actions: `<button class="btn ghost sm" data-act="gymAdd">${icon.plus} Neu</button>`,
+        body: `
+          <p class="muted">Beim Start eines Trainings wählst du, wo du bist. Geräte und Kabelzüge werden dann nur innerhalb desselben Gyms verglichen, freie Gewichte weiterhin überall. Pro Übung kannst du das in ihrer Detailansicht umstellen.</p>
+          ${S.gyms.length ? `
+            <div class="card list">
+              ${S.gyms.map((g) => `
+                <div class="list-item static">
+                  <span class="li-icon">${icon.pin}</span>
+                  <span class="li-main"><strong>${esc(g.name)}${g.id === cur ? ' <span class="tag">Aktuell</span>' : ''}</strong><small>${n(g.id)} ${n(g.id) === 1 ? 'Training' : 'Trainings'}</small></span>
+                  <button class="icon-btn sm" data-act="gymRename" data-id="${esc(g.id)}" aria-label="${esc(g.name)} umbenennen">${icon.edit}</button>
+                  <button class="icon-btn sm" data-act="gymDelete" data-id="${esc(g.id)}" aria-label="${esc(g.name)} löschen">${icon.trash}</button>
+                </div>`).join('')}
+            </div>
+            ${none ? `
+              <div class="card hint">
+                <h3>${none} ${none === 1 ? 'Training' : 'Trainings'} ohne Gym</h3>
+                <p>Ordne sie einem Gym zu, damit deine bisherigen Werte beim Vergleich mitzählen.</p>
+                <button class="btn ghost" data-act="gymAssign">Einem Gym zuordnen</button>
+              </div>` : ''}` :
+            Gym.emptyState(icon.pin, 'Noch kein Gym angelegt', 'Lege dein Studio an, um Trainings nach Gym zu unterscheiden.', `<button class="btn primary" data-act="gymAdd">Gym hinzufügen</button>`)}`,
+      }),
+    };
+  });
+  Gym.act.gymAdd = () => Gym.gymForm(null, (g) => {
+    if (!Gym.currentGymId()) Gym.S.settings.lastGymId = g.id;
+    Gym.recomputePRs(); Gym.save(); Gym.render();
+  });
+  Gym.act.gymRename = (el) => Gym.gymForm(Gym.gym(el.dataset.id), () => Gym.render());
+  Gym.act.gymDelete = async (el) => {
+    const g = Gym.gym(el.dataset.id);
+    if (!g) return;
+    const used = Gym.S.workouts.filter((w) => w.gymId === g.id).length;
+    const text = used
+      ? `${used} ${used === 1 ? 'Training bleibt' : 'Trainings bleiben'} erhalten, ${used === 1 ? 'steht' : 'stehen'} danach aber ohne Gym da.`
+      : 'Diesem Gym ist noch kein Training zugeordnet.';
+    const ok = await Gym.confirm(`Gym „${g.name}“ löschen?`, text, 'Löschen', true);
+    if (!ok) return;
+    const S = Gym.S;
+    S.gyms = S.gyms.filter((x) => x.id !== g.id);
+    for (const w of S.workouts) if (w.gymId === g.id) w.gymId = null;
+    if (S.active && S.active.gymId === g.id) S.active.gymId = null;
+    if (S.settings.lastGymId === g.id) S.settings.lastGymId = null;
+    Gym.recomputePRs(); Gym.save(); Gym.toast('Gym gelöscht'); Gym.render();
+  };
+  Gym.act.gymAssign = () => Gym.chooseGym(null, async (id) => {
+    if (!id) return;
+    const list = Gym.S.workouts.filter((w) => !Gym.gym(w.gymId));
+    const text = `${list.length} ${list.length === 1 ? 'Training wird' : 'Trainings werden'} „${Gym.gymName(id)}“ zugeordnet. Einzelne Trainings kannst du später im Verlauf über „Bearbeiten“ ändern.`;
+    const ok = await Gym.confirm('Trainings zuordnen?', text, 'Zuordnen');
+    if (!ok) return Gym.render();
+    for (const w of list) w.gymId = id;
+    Gym.recomputePRs(); Gym.save(); Gym.toast('Trainings zugeordnet'); Gym.render();
+  }, { title: 'Welchem Gym zuordnen?', noNone: true });
 
   /* ---------- Routinen ---------- */
   Gym.route('/routines', 'more', () => ({
@@ -423,7 +487,7 @@
             </div>
             <input type="file" id="import-file" accept=".json,application/json" data-change="importFile" hidden>
           </div>
-          <p class="muted small center">${S.workouts.length} Trainings · ${S.body.length} Körperwerte · ${S.routines.length} Routinen · ${S.customExercises.filter((e) => !e.archived).length} eigene Übungen</p>`,
+          <p class="muted small center">${S.workouts.length} Trainings · ${S.gyms.length} Gyms · ${S.body.length} Körperwerte · ${S.routines.length} Routinen · ${S.customExercises.filter((e) => !e.archived).length} eigene Übungen</p>`,
       }),
     };
   });
@@ -436,10 +500,10 @@
   Gym.act.exportJson = () => { download(`gymapp-sicherung-${Gym.dayKey(Date.now())}.json`, JSON.stringify(Gym.S, null, 2), 'application/json'); Gym.toast('Sicherung erstellt'); };
   Gym.act.exportCsv = () => {
     const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-    const lines = [['Datum', 'Uhrzeit', 'Training', 'Übung', 'Muskelgruppe', 'Satz', 'Gewicht/Distanz', 'Wdh./Zeit'].map(q).join(';')];
+    const lines = [['Datum', 'Uhrzeit', 'Training', 'Gym', 'Übung', 'Muskelgruppe', 'Satz', 'Gewicht/Distanz', 'Wdh./Zeit'].map(q).join(';')];
     for (const w of Gym.sorted()) for (const en of w.entries) {
       const ex = Gym.ex(en.exId);
-      en.sets.forEach((s, i) => lines.push([Gym.dayKey(w.start), fmt.time(w.start), w.name, ex.name, ex.muscle, i + 1, fmt.input(s.w), fmt.input(s.r)].map(q).join(';')));
+      en.sets.forEach((s, i) => lines.push([Gym.dayKey(w.start), fmt.time(w.start), w.name, Gym.gymName(w.gymId), ex.name, ex.muscle, i + 1, fmt.input(s.w), fmt.input(s.r)].map(q).join(';')));
     }
     download(`gymapp-trainings-${Gym.dayKey(Date.now())}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
   };

@@ -7,7 +7,9 @@
   /* ---------- Speicher ---------- */
   const blank = () => ({
     version: 1,
-    settings: { name: '', theme: 'dark', restSec: 90, autoRest: true, sound: true, barKg: 20, heightCm: null, weeklyGoal: 3 },
+    settings: { name: '', theme: 'dark', restSec: 90, autoRest: true, sound: true, barKg: 20, heightCm: null, weeklyGoal: 3, lastGymId: null },
+    gyms: [],       // [{ id, name }]
+    exBound: {},    // Übung -> true/false: nur im selben Gym vergleichen (überschreibt die Vorgabe)
     customExercises: [],
     routines: null,
     workouts: [],
@@ -102,6 +104,21 @@
     Gym.S.customExercises.find((e) => e.id === id) ||
     { id, name: 'Unbekannte Übung', muscle: 'Sonstiges', equip: 'Sonstiges', kind: 'weight' };
 
+  /* ---------- Gyms ---------- */
+  Gym.gym = (id) => (id && Gym.S.gyms.find((g) => g.id === id)) || null;
+  Gym.gymName = (id) => { const g = Gym.gym(id); return g ? g.name : ''; };
+  // Das zuletzt gewählte Gym (für das nächste Training vorausgewählt)
+  Gym.currentGymId = () => { const g = Gym.gym(Gym.S.settings.lastGymId); return g ? g.id : null; };
+  // Geräte und Kabelzüge unterscheiden sich je Studio: Werte nur im selben Gym vergleichen
+  Gym.isGymBound = (ex) => {
+    const o = Gym.S.exBound[ex.id];
+    return o != null ? o : ex.equip === 'Maschine' || ex.equip === 'Kabel';
+  };
+  // Gym-Filter: undefined = alle Gyms, null = Trainings ohne Gym, sonst die Gym-ID
+  Gym.inGym = (w, f) => f === undefined || (w.gymId || null) === f;
+  // Filter, mit dem die Übung in diesem Training verglichen wird
+  Gym.cmpGym = (ex, w) => (Gym.S.gyms.length && Gym.isGymBound(ex) ? w.gymId || null : undefined);
+
   // Spalten der Satz-Eingabe je Übungsart: [Feld, Kopfzeile]
   Gym.fields = (kind) => ({
     weight: [['w', 'kg'], ['r', 'Wdh.']],
@@ -186,21 +203,23 @@
   Gym.sorted = () => Gym.S.workouts.slice().sort((a, b) => a.start - b.start);
 
   // Verlauf einer Übung: ein Eintrag pro Training, aufsteigend nach Datum
-  Gym.exerciseHistory = (exId) => {
+  // gymFilter: undefined = alle Gyms, null = ohne Gym, sonst Gym-ID
+  Gym.exerciseHistory = (exId, gymFilter) => {
     const ex = Gym.ex(exId), out = [];
     for (const w of Gym.sorted()) {
+      if (!Gym.inGym(w, gymFilter)) continue;
       const sets = [];
       for (const en of w.entries) if (en.exId === exId) sets.push(...en.sets);
-      if (sets.length) out.push({ ts: w.start, wid: w.id, name: w.name, sets, m: Gym.sessionMetrics(ex, sets) });
+      if (sets.length) out.push({ ts: w.start, wid: w.id, name: w.name, gymId: w.gymId || null, sets, m: Gym.sessionMetrics(ex, sets) });
     }
     return out;
   };
 
   // Sätze der Übung aus dem letzten Training vor `before`
-  Gym.lastSets = (exId, before, skipId) => {
+  Gym.lastSets = (exId, before, skipId, gymFilter) => {
     let best = null;
     for (const w of Gym.S.workouts) {
-      if (w.id === skipId || w.start >= before) continue;
+      if (w.id === skipId || w.start >= before || !Gym.inGym(w, gymFilter)) continue;
       if (best && w.start < best.start) continue;
       if (w.entries.some((en) => en.exId === exId)) best = w;
     }
@@ -211,9 +230,9 @@
   };
 
   // Bestwerte einer Übung mit Datum
-  Gym.records = (exId) => {
+  Gym.records = (exId, gymFilter) => {
     const ex = Gym.ex(exId), rec = {};
-    for (const h of Gym.exerciseHistory(exId)) {
+    for (const h of Gym.exerciseHistory(exId, gymFilter)) {
       for (const d of Gym.metricDefs(ex.kind)) {
         const v = h.m[d.key];
         if (v > 0 && (!rec[d.key] || v > rec[d.key].v)) rec[d.key] = { v, ts: h.ts };
@@ -230,7 +249,10 @@
       for (const en of w.entries) {
         const ex = Gym.ex(en.exId);
         const m = Gym.sessionMetrics(ex, en.sets);
-        const b = (best[en.exId] = best[en.exId] || {});
+        // Gymgebundene Übungen (Geräte, Kabel) zählen je Gym getrennt
+        const scope = Gym.cmpGym(ex, w);
+        const bk = scope === undefined ? en.exId : en.exId + '|' + (scope || '');
+        const b = (best[bk] = best[bk] || {});
         let hit = false; // höchstens ein Rekord je Übung und Training (der erste, wichtigste)
         for (const key of Gym.PR_KEYS[ex.kind]) {
           const v = m[key];
@@ -247,8 +269,9 @@
   };
 
   // Zeit-Buckets (Wochen, bei langen Zeiträumen Monate) von `from` bis heute
-  Gym.buckets = (from) => {
+  Gym.buckets = (from, list) => {
     const now = Date.now(), out = [];
+    list = list || Gym.S.workouts;
     const weeks = Math.round((Gym.weekStart(now) - Gym.weekStart(from)) / (7 * 86400000)) + 1;
     if (weeks <= 53) {
       for (let t = Gym.weekStart(from); t <= now; t = Gym.addDays(t, 7)) {
@@ -264,7 +287,7 @@
       }
     }
     for (const b of out) {
-      b.workouts = Gym.S.workouts.filter((w) => w.start >= b.start && w.start < b.end);
+      b.workouts = list.filter((w) => w.start >= b.start && w.start < b.end);
       b.count = b.workouts.length;
       b.volume = b.workouts.reduce((a, w) => a + Gym.wVolume(w), 0);
     }
@@ -284,7 +307,7 @@
 
   /* ---------- Trainings anlegen ---------- */
   Gym.newWorkout = (name, routine) => {
-    const w = { id: Gym.uid(), name: name || 'Training', start: Date.now(), end: null, notes: '', routineId: routine ? routine.id : null, entries: [], prs: [] };
+    const w = { id: Gym.uid(), name: name || 'Training', start: Date.now(), end: null, notes: '', routineId: routine ? routine.id : null, gymId: Gym.currentGymId(), entries: [], prs: [] };
     if (routine) {
       for (const it of routine.items) {
         const n = Math.max(1, it.sets || 3);

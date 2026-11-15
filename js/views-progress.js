@@ -18,10 +18,26 @@
     return isFinite(t) ? Gym.dayStart(t) : Gym.dayStart(Gym.addDays(Date.now(), -28));
   };
 
+  /* ---------- Gym-Filter (Fortschritt und Übungsdetail) ---------- */
+  // Schlüssel: 'all' = alle Gyms, 'none' = ohne Angabe, sonst die Gym-ID
+  Gym.ui.gymFilter = 'all';
+  const gymVal = (k) => (k === 'none' ? null : k === 'all' ? undefined : k);
+  // Nur Gyms anbieten, die in der Liste (Trainings oder Verlaufseinträge) vorkommen
+  const gymOpts = (list) => {
+    const opts = [['all', 'Alle Gyms']];
+    for (const g of Gym.S.gyms) if (list.some((x) => x.gymId === g.id)) opts.push([g.id, g.name]);
+    if (list.some((x) => !Gym.gym(x.gymId))) opts.push(['none', 'Ohne Angabe']);
+    return opts;
+  };
+  const gymChips = (cur, act, opts, extra) => `
+    <div class="chips scroll" role="group" aria-label="Gym">
+      ${opts.map(([k, label]) => `<button class="chip ${cur === k ? 'on' : ''}" data-act="${act}" data-g="${esc(k)}" ${extra || ''} aria-pressed="${cur === k}">${k === 'all' || k === 'none' ? '' : icon.pin}${esc(label)}</button>`).join('')}
+    </div>`;
+
   // Übungen nach Häufigkeit (für die Auswahl im Fortschritt)
-  const exByUse = () => {
+  const exByUse = (list) => {
     const n = {};
-    for (const w of Gym.S.workouts) for (const en of w.entries) n[en.exId] = (n[en.exId] || 0) + 1;
+    for (const w of list) for (const en of w.entries) n[en.exId] = (n[en.exId] || 0) + 1;
     return Object.keys(n).sort((a, b) => n[b] - n[a]).map((id) => ({ ex: Gym.ex(id), n: n[id] }));
   };
 
@@ -32,13 +48,17 @@
       return { html: Gym.page({ title: 'Fortschritt', body: Gym.emptyState(icon.chart, 'Noch keine Daten', 'Nach deinem ersten Training siehst du hier deine Entwicklung.', `<div class="row-btns center"><a class="btn primary" href="#/workout">Training starten</a><button class="btn ghost" data-act="demoLoad">Beispieldaten laden</button></div>`) }) };
     }
     const from = rangeFrom();
-    const ws = S.workouts.filter((w) => w.start >= from);
-    const buckets = Gym.buckets(from);
+    const gOpts = gymOpts(S.workouts);
+    if (!gOpts.some((o) => o[0] === Gym.ui.gymFilter)) Gym.ui.gymFilter = 'all';
+    const gf = gymVal(Gym.ui.gymFilter);
+    const pool = S.workouts.filter((w) => Gym.inGym(w, gf)); // alle Trainings des gewählten Gyms
+    const ws = pool.filter((w) => w.start >= from);
+    const buckets = Gym.buckets(from, pool);
     const unit = buckets.unit;
     const vol = ws.reduce((a, w) => a + Gym.wVolume(w), 0);
     const avgDur = ws.length ? ws.reduce((a, w) => a + Gym.wDur(w), 0) / ws.length : 0;
     const prCount = ws.reduce((a, w) => a + (w.prs ? w.prs.length : 0), 0);
-    const used = exByUse();
+    const used = exByUse(pool);
     if (!Gym.ui.progEx || !used.some((u) => u.ex.id === Gym.ui.progEx)) Gym.ui.progEx = used.length ? used[0].ex.id : null;
     const pex = Gym.ui.progEx ? Gym.ex(Gym.ui.progEx) : null;
     const pdef = pex ? Gym.metricDefs(pex.kind)[0] : null;
@@ -52,6 +72,7 @@
       <div class="chips scroll" role="group" aria-label="Zeitraum">
         ${RANGES.map(([k, label]) => `<button class="chip ${Gym.ui.range === k ? 'on' : ''}" data-act="setRange" data-r="${k}" aria-pressed="${Gym.ui.range === k}">${label}</button>`).join('')}
       </div>
+      ${S.gyms.length && gOpts.length > 1 ? gymChips(Gym.ui.gymFilter, 'setGymFilter', gOpts) : ''}
       <div class="tiles">
         ${Gym.tile('Trainings', String(ws.length))}
         ${Gym.tile('Volumen', esc(fmt.kg(vol)))}
@@ -89,7 +110,7 @@
         // Körpergewicht
         const bw = S.body.filter((b) => b.weight != null).map((b) => ({ t: Gym.keyToTs(b.date), v: b.weight })).filter((p) => p.t >= from).sort((a, b) => a.t - b.t);
         // Übung
-        const hist = pex ? Gym.exerciseHistory(pex.id).filter((h) => h.ts >= from && h.m[pdef.key] > 0) : [];
+        const hist = pex ? Gym.exerciseHistory(pex.id, gf).filter((h) => h.ts >= from && h.m[pdef.key] > 0) : [];
 
         C.fill(root, {
           freq: {
@@ -120,6 +141,7 @@
     };
   });
   Gym.act.setRange = (el) => { Gym.ui.range = el.dataset.r; Gym.render(); };
+  Gym.act.setGymFilter = (el) => { Gym.ui.gymFilter = el.dataset.g; Gym.render(); };
   Gym.act.setProgEx = (el) => { Gym.ui.progEx = el.value; Gym.render(); };
 
   /* ---------- Übungen ---------- */
@@ -156,17 +178,31 @@
 
   /* ---------- Übungsdetail ---------- */
   const exMetric = {};
+  const exGym = {}; // gewählter Gym-Filter je Übung
   Gym.route('/exercise/([^/]+)', 'more', (id) => {
     const ex = Gym.ex(id);
     const defs = Gym.metricDefs(ex.kind);
     const key = exMetric[id] && defs.some((d) => d.key === exMetric[id]) ? exMetric[id] : defs[0].key;
     const def = defs.find((d) => d.key === key);
-    const hist = Gym.exerciseHistory(id);
-    const rec = Gym.records(id);
+    const histAll = Gym.exerciseHistory(id);
+    const hasGyms = Gym.S.gyms.length > 0;
+    const bound = Gym.isGymBound(ex);
+    const gOpts = gymOpts(histAll);
+    // Vorgabe: gymgebundene Übungen zeigen das aktuelle Gym, alle anderen alle Gyms
+    let gKey = exGym[id];
+    if (!gKey || !gOpts.some((o) => o[0] === gKey)) {
+      const curGym = Gym.currentGymId();
+      gKey = hasGyms && bound && gOpts.some((o) => o[0] === curGym) ? curGym : 'all';
+    }
+    const gf = gymVal(gKey);
+    const hist = Gym.exerciseHistory(id, gf);
+    const rec = Gym.records(id, gf);
+    const showGyms = hasGyms && gOpts.length > 1;
     const custom = Gym.S.customExercises.find((e) => e.id === id);
 
     const body = `
       <p class="muted">${esc(ex.muscle)} · ${esc(ex.equip)} · ${esc(Gym.KINDS[ex.kind])}</p>
+      ${showGyms ? gymChips(gKey, 'exGymFilter', gOpts, `data-id="${esc(id)}"`) : ''}
       ${hist.length ? `
         <div class="tiles">
           ${defs.map((d) => Gym.tile('Bestwert: ' + d.label, rec[d.key] ? esc(d.fmt(rec[d.key].v)) : '–', rec[d.key] ? `<span class="delta">${esc(fmt.date(rec[d.key].ts))}</span>` : '')).join('')}
@@ -175,14 +211,19 @@
         <div class="chips scroll" role="group" aria-label="Kennzahl">
           ${defs.map((d) => `<button class="chip ${d.key === key ? 'on' : ''}" data-act="exMetric" data-id="${esc(id)}" data-k="${d.key}" aria-pressed="${d.key === key}">${esc(d.label)}</button>`).join('')}
         </div>
-        ${C.card('exhist', def.label, 'Verlauf über alle Trainings')}
+        ${C.card('exhist', def.label, gf === undefined ? 'Verlauf über alle Trainings' : gf ? 'Verlauf in ' + Gym.gymName(gf) : 'Verlauf der Trainings ohne Gym')}
         <div class="sec-head"><h2>Verlauf</h2></div>
         ${hist.slice().reverse().slice(0, 25).map((h) => `
           <a class="card hrow" href="#/history/${esc(h.wid)}">
-            <div class="wcard-top"><strong>${esc(fmt.date(h.ts))}</strong><span class="muted">${esc(h.name)}</span></div>
+            <div class="wcard-top"><strong>${esc(fmt.date(h.ts))}</strong><span class="muted">${esc(h.name)}${Gym.gymName(h.gymId) ? ' · ' + esc(Gym.gymName(h.gymId)) : ''}</span></div>
             <div class="hsets">${h.sets.map((s) => `<span>${esc(Gym.fmtSetShort(ex, s))}</span>`).join('')}</div>
           </a>`).join('')}` :
         Gym.emptyState(icon.chart, 'Noch kein Verlauf', 'Sobald du diese Übung trainiert hast, siehst du hier Bestwerte und ein Diagramm.')}
+      ${hasGyms ? `
+        <div class="card">
+          <label class="switch-row"><span class="li-main"><strong>Nur im selben Gym vergleichen</strong><small class="wrap">Vorschläge („Zuletzt“) und Rekorde zählen dann je Gym getrennt. Sinnvoll für Geräte und Kabelzüge, die sich je Studio unterscheiden.</small></span>
+          <input type="checkbox" class="switch" data-change="exBound" data-id="${esc(id)}" ${bound ? 'checked' : ''}></label>
+        </div>` : ''}
       ${custom ? `<div class="row-btns wrap"><button class="btn ghost" data-act="exEdit" data-id="${esc(id)}">${icon.edit} Bearbeiten</button><button class="btn ghost danger" data-act="exArchive" data-id="${esc(id)}">${icon.trash} Löschen</button></div>` : ''}`;
 
     return {
@@ -200,6 +241,12 @@
     };
   });
   Gym.act.exMetric = (el) => { exMetric[el.dataset.id] = el.dataset.k; Gym.render(); };
+  Gym.act.exGymFilter = (el) => { exGym[el.dataset.id] = el.dataset.g; Gym.render(); };
+  Gym.act.exBound = (el) => {
+    Gym.S.exBound[el.dataset.id] = el.checked;
+    delete exGym[el.dataset.id];
+    Gym.recomputePRs(); Gym.save(); Gym.render();
+  };
   Gym.act.exEdit = (el) => Gym.exerciseForm(Gym.S.customExercises.find((e) => e.id === el.dataset.id), () => Gym.render());
   Gym.act.exArchive = async (el) => {
     const ok = await Gym.confirm('Übung löschen?', 'Die Übung verschwindet aus der Auswahl. Bereits gespeicherte Trainings bleiben erhalten.', 'Löschen', true);

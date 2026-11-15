@@ -38,6 +38,7 @@
     calendar: I('<rect x="3.500" y="5" width="17" height="15" rx="2"/><path d="M3.500 10h17M8 3v4M16 3v4"/>'),
     download: I('<path d="M12 4v11M7.500 11l4.500 4.500 4.500-4.500M5 20h14"/>'),
     upload: I('<path d="M12 15.500V4.500M7.500 9L12 4.500 16.500 9M5 20h14"/>'),
+    pin: I('<path d="M12 21s-6.500-5.700-6.500-10.500a6.500 6.500 0 0 1 13 0C18.500 15.300 12 21 12 21z"/><circle cx="12" cy="10.500" r="2.200"/>'),
     shield: I('<path d="M12 3l7.500 3v5.500c0 4.500-3.200 8.200-7.500 9.500-4.300-1.300-7.500-5-7.500-9.500V6z"/><path d="M8.800 12l2.200 2.200 4.200-4.200"/>'),
   });
 
@@ -218,6 +219,45 @@
         <button class="btn primary block">Speichern</button>
       </form>`,
       after: (m) => m.querySelector('input[name=name]').focus(),
+    });
+  };
+
+  /* ---------- Gyms: anlegen, umbenennen, auswählen ---------- */
+  Gym.gymForm = (gym, done) => {
+    Gym.act.gymFormSave = (form) => {
+      const name = form.elements.name.value.trim();
+      if (!name) return Gym.toast('Bitte einen Namen eingeben');
+      if (Gym.S.gyms.some((g) => g !== gym && g.name.toLowerCase() === name.toLowerCase())) return Gym.toast('Dieses Gym gibt es schon');
+      let target = gym;
+      if (!target) { target = { id: 'g-' + Gym.uid() }; Gym.S.gyms.push(target); }
+      target.name = name;
+      Gym.save();
+      Gym.closeModal();
+      if (done) done(target);
+    };
+    Gym.modal({
+      title: gym ? 'Gym umbenennen' : 'Neues Gym',
+      body: `<form data-submit="gymFormSave" class="form">
+        <label>Name<input name="name" required maxlength="40" value="${esc(gym ? gym.name : '')}" placeholder="z. B. Studio Innenstadt" autocomplete="off"></label>
+        <button class="btn primary block">Speichern</button>
+      </form>`,
+      after: (m) => m.querySelector('input[name=name]').focus(),
+    });
+  };
+
+  // Auswahl-Dialog; cb bekommt die Gym-ID oder null (ohne Angabe). opts: { title, noNone }
+  Gym.chooseGym = (currentId, cb, opts) => {
+    opts = opts || {};
+    Gym.act.gymChoose = (el) => { Gym.closeModal(); cb(el.dataset.id || null); };
+    Gym.act.gymChooseNew = () => Gym.gymForm(null, (g) => cb(g.id));
+    const row = (id, ic, name) => `<button class="list-item" data-act="gymChoose" data-id="${esc(id)}">${ic}<span class="li-main">${esc(name)}</span>${(currentId || '') === id ? icon.check : ''}</button>`;
+    Gym.modal({
+      title: opts.title || 'Wo trainierst du?',
+      body: `<div class="menu">
+        ${Gym.S.gyms.map((g) => row(g.id, icon.pin, g.name)).join('')}
+        ${opts.noNone ? '' : row('', icon.x, 'Ohne Angabe')}
+        <button class="list-item" data-act="gymChooseNew">${icon.plus}<span class="li-main">Neues Gym anlegen</span></button>
+      </div>`,
     });
   };
 

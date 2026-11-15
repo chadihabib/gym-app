@@ -20,6 +20,7 @@
         <span>${icon.timer}${esc(fmt.dur(Gym.wDur(w)))}</span>
         <span>${icon.dumbbell}${esc(fmt.kg(Gym.wVolume(w)))}</span>
         <span>${icon.list}${Gym.wSets(w)} Sätze</span>
+        ${Gym.gymName(w.gymId) ? `<span>${icon.pin}${esc(Gym.gymName(w.gymId))}</span>` : ''}
         ${w.prs && w.prs.length ? `<span class="pr">${icon.trophy}${w.prs.length} ${w.prs.length === 1 ? 'Rekord' : 'Rekorde'}</span>` : ''}
       </div>
       <div class="wcard-ex">${esc(exNames(w, 4))}</div>
@@ -35,7 +36,26 @@
     </div>`;
   Gym.routineCard = routineCard;
 
+  // Gym-Auswahl vor dem Start: das zuletzt genutzte Gym ist vorausgewählt
+  const gymPicker = () => {
+    const cur = Gym.currentGymId();
+    return `<div class="gym-pick">
+      <div class="gym-pick-label">${icon.pin}<span>Wo trainierst du?</span></div>
+      <div class="chips scroll" role="group" aria-label="Gym">
+        ${Gym.S.gyms.map((g) => `<button class="chip ${g.id === cur ? 'on' : ''}" data-act="gymSelect" data-id="${esc(g.id)}" aria-pressed="${g.id === cur}">${esc(g.name)}</button>`).join('')}
+        <button class="chip dashed" data-act="gymNew">${icon.plus}${Gym.S.gyms.length ? 'Neu' : 'Gym hinzufügen'}</button>
+      </div>
+    </div>`;
+  };
+  Gym.act.gymSelect = (el) => {
+    const st = Gym.S.settings;
+    st.lastGymId = st.lastGymId === el.dataset.id ? null : el.dataset.id; // erneutes Antippen wählt ab
+    Gym.save(); Gym.render();
+  };
+  Gym.act.gymNew = () => Gym.gymForm(null, (g) => { Gym.S.settings.lastGymId = g.id; Gym.save(); Gym.render(); });
+
   const startSection = () => `
+    ${gymPicker()}
     <button class="btn primary big block" data-act="startWorkout">${icon.plus} Leeres Training starten</button>
     <div class="sec-head"><h2>Aus Routine starten</h2><a href="#/routines">Verwalten</a></div>
     ${Gym.S.routines.length ? Gym.S.routines.map(routineCard).join('') : `<p class="muted">Noch keine Routinen. <a href="#/routine/new">Routine anlegen</a></p>`}`;
@@ -130,7 +150,10 @@
   const entryCard = (w, en, ei, mode) => {
     const ex = Gym.ex(en.exId);
     const fields = Gym.fields(ex.kind);
-    const last = Gym.lastSets(en.exId, mode === 'live' ? Date.now() : w.start, w.id);
+    const before = mode === 'live' ? Date.now() : w.start;
+    const gf = Gym.cmpGym(ex, w);
+    const last = Gym.lastSets(en.exId, before, w.id, gf);
+    const firstHere = !last && gf && Gym.lastSets(en.exId, before, w.id);
     const rows = en.sets.map((s, si) => {
       const h = hint(en, si, last);
       return `<div class="set-row ${s.done && mode === 'live' ? 'done' : ''}">
@@ -144,7 +167,7 @@
       <div class="entry-head">
         <div class="li-main">
           <a class="entry-name" href="#/exercise/${esc(ex.id)}">${esc(ex.name)}</a>
-          <small>${esc(ex.muscle)}${en.target ? ' · Ziel: ' + esc(en.target) + (/^[\d\s–-]+$/.test(en.target) ? ' Wdh.' : '') : ''}</small>
+          <small>${esc(ex.muscle)}${en.target ? ' · Ziel: ' + esc(en.target) + (/^[\d\s–-]+$/.test(en.target) ? ' Wdh.' : '') : ''}${firstHere ? ' · erstes Mal in diesem Gym' : ''}</small>
         </div>
         <button class="icon-btn sm" data-act="entryMenu" data-e="${ei}" aria-label="Optionen für ${esc(ex.name)}">${icon.more}</button>
       </div>
@@ -177,7 +200,7 @@
     const en = w.entries[ei], s = en.sets[si], ex = Gym.ex(en.exId);
     if (s.done) s.done = false;
     else {
-      const h = hint(en, si, Gym.lastSets(en.exId, Date.now(), w.id));
+      const h = hint(en, si, Gym.lastSets(en.exId, Date.now(), w.id, Gym.cmpGym(ex, w)));
       for (const [f] of Gym.fields(ex.kind)) if (s[f] == null && h[f] != null) s[f] = h[f];
       if (!Gym.setValid(ex, s)) {
         Gym.toast('Bitte erst die Werte eintragen');
@@ -198,7 +221,7 @@
   Gym.act.entryAdd = () => {
     const c = cur;
     Gym.pickExercise((exId) => {
-      const last = Gym.lastSets(exId, Date.now(), c.w.id);
+      const last = Gym.lastSets(exId, Date.now(), c.w.id, Gym.cmpGym(Gym.ex(exId), c.w));
       const n = last ? Math.min(6, Math.max(1, last.length)) : 3;
       c.w.entries.push({ id: Gym.uid(), exId, sets: Array.from({ length: n }, () => ({ w: null, r: null, done: false })) });
       if (c.mode === 'live') Gym.save();
@@ -255,11 +278,21 @@
           <button class="btn primary" data-act="wkFinish">${icon.check} Beenden</button>
         </header>
         <div class="content">
+          <div><button class="chip gym-chip ${w.gymId && Gym.gym(w.gymId) ? '' : 'dashed'}" data-act="wkGym">${icon.pin}${esc(Gym.gymName(w.gymId) || 'Gym wählen')}</button></div>
           ${editorBody(w, 'live')}
           <button class="btn block text danger" data-act="wkDiscard">Training verwerfen</button>
         </div>`,
     };
   });
+
+  Gym.act.wkGym = () => {
+    const c = cur;
+    Gym.chooseGym(Gym.gym(c.w.gymId) ? c.w.gymId : null, (id) => {
+      c.w.gymId = id;
+      if (id) Gym.S.settings.lastGymId = id;
+      Gym.save(); Gym.render();
+    });
+  };
 
   Gym.act.wkFinish = async () => {
     const S = Gym.S, a = S.active;
@@ -314,6 +347,7 @@
             <label>Datum<input type="date" name="date" value="${Gym.dayKey(w.start)}" max="${Gym.dayKey(Date.now())}" data-input="editMeta"></label>
             <label>Beginn<input type="time" name="time" value="${p(d.getHours())}:${p(d.getMinutes())}" data-input="editMeta"></label>
             <label class="span2">Dauer in Minuten<input class="num" type="text" inputmode="numeric" name="dur" value="${Math.round(Gym.wDur(w) / 60000)}" data-input="editMeta"></label>
+            ${Gym.S.gyms.length ? `<label class="span2">Gym<select data-change="editGym"><option value="">Ohne Angabe</option>${Gym.S.gyms.map((g) => `<option value="${esc(g.id)}" ${g.id === w.gymId ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>` : ''}
           </div>
           ${editorBody(w, 'edit')}
         </div>`,
@@ -327,6 +361,7 @@
     if (isFinite(start)) { const old = Gym.wDur(w); w.start = start; w.end = start + old; }
     if (dur != null) w.end = w.start + dur * 60000;
   };
+  Gym.act.editGym = (el) => { Gym.draft.gymId = el.value || null; Gym.render(); };
   Gym.act.editSave = () => {
     const S = Gym.S, d = Gym.draft;
     const clean = Gym.cleanWorkout(d, false);
@@ -389,7 +424,7 @@
     }).join('');
     const body = `
       ${fresh ? `<div class="card done-banner">${icon.trophy}<div><h2>Stark, Training geschafft!</h2><p>${prs.length ? `Du hast ${prs.length} ${prs.length === 1 ? 'neuen Rekord' : 'neue Rekorde'} aufgestellt.` : 'Alles ist gespeichert.'}</p></div></div>` : ''}
-      <p class="muted">${esc(fmt.long(w.start))} · ${esc(fmt.time(w.start))} Uhr</p>
+      <p class="muted">${esc(fmt.long(w.start))} · ${esc(fmt.time(w.start))} Uhr${Gym.gymName(w.gymId) ? ' · ' + esc(Gym.gymName(w.gymId)) : ''}</p>
       <div class="tiles">
         ${tile('Dauer', esc(fmt.dur(Gym.wDur(w))))}
         ${tile('Volumen', esc(fmt.kg(Gym.wVolume(w))))}
