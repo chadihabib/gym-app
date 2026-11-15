@@ -7,9 +7,10 @@
   /* ---------- Speicher ---------- */
   const blank = () => ({
     version: 1,
-    settings: { name: '', theme: 'dark', restSec: 90, autoRest: true, sound: true, barKg: 20, heightCm: null, weeklyGoal: 3, lastGymId: null },
+    settings: { name: '', theme: 'dark', restSec: 90, autoRest: true, sound: true, barKg: 20, heightCm: null, weeklyGoal: 3, lastGymId: null, coach: true },
     gyms: [],       // [{ id, name }]
     exBound: {},    // Übung -> true/false: nur im selben Gym vergleichen (überschreibt die Vorgabe)
+    exCoach: {},    // Übung -> { min, max, step }: eigener Wiederholungsbereich und Gewichtsschritt
     customExercises: [],
     routines: null,
     workouts: [],
@@ -311,6 +312,112 @@
     let n = 0;
     while (have.has(t)) { n++; t = Gym.addDays(t, -7); }
     return n;
+  };
+
+  /* ---------- Coach: Gewichtsvorschläge nach doppelter Progression ---------- */
+  // Regel: Erst die Wiederholungen bis zum oberen Ende des Bereichs steigern, dann das Gewicht.
+  const BANDS = [[3, 5], [5, 8], [8, 12], [12, 15], [15, 20]];
+  const STEP_BY_EQUIP = { Langhantel: 2.5, Kurzhantel: 2, Maschine: 5, Kabel: 2.5, Kettlebell: 4 };
+  const round2 = (v) => Math.round(v * 100) / 100;
+
+  // Wiederholungsbereich und Gewichtsschritt einer Übung.
+  // Quelle: selbst festgelegt ('own'), Ziel der Routine ('routine') oder aus dem Verlauf erkannt ('auto')
+  Gym.coachCfg = (ex, en, hist) => {
+    const own = Gym.S.exCoach[ex.id] || {};
+    let min = own.min, max = own.max, src = 'own';
+    if (!(min > 0 && max >= min)) {
+      const m = en && en.target ? String(en.target).match(/^\s*(\d+)(?:\s*[–-]\s*(\d+))?\s*$/) : null;
+      if (m) {
+        min = +m[1]; max = +(m[2] || m[1]); src = 'routine';
+        if (max < min) [min, max] = [max, min];
+      } else {
+        // Band, in dem die üblichen Wiederholungen der letzten drei Trainings liegen (nur Arbeitssätze)
+        const reps = [];
+        for (const h of hist.slice(-3)) {
+          const top = Math.max(...h.sets.map((s) => s.w || 0));
+          for (const s of h.sets) if (s.r > 0 && (s.w || 0) === top) reps.push(s.r);
+        }
+        reps.sort((a, b) => a - b);
+        const med = reps.length ? reps[Math.floor(reps.length / 2)] : 10;
+        let i = BANDS.findIndex((b) => med <= b[1]);
+        if (i < 0) i = BANDS.length - 1;
+        // Liegt der übliche Wert genau auf einer Bandgrenze (z. B. immer 8), entscheidet die Streuung:
+        // Nur wer schon darunter lag, bekommt das untere Band. Sonst das obere, damit erst die
+        // Wiederholungen steigen und nicht vorschnell das Gewicht.
+        if (i < BANDS.length - 1 && med === BANDS[i][1] && !reps.some((r) => r < med)) i++;
+        min = BANDS[i][0]; max = BANDS[i][1]; src = 'auto';
+      }
+    }
+    let step = own.step, stepSrc = 'own';
+    if (!(step > 0)) {
+      // Kleinster Abstand zwischen bisher genutzten Gewichten, sonst üblicher Schritt je Gerät
+      stepSrc = 'auto';
+      const ws = Array.from(new Set(hist.flatMap((h) => h.sets.map((s) => s.w || 0)).filter((v) => v > 0))).sort((a, b) => a - b);
+      let d = Infinity;
+      for (let i = 1; i < ws.length; i++) d = Math.min(d, ws[i] - ws[i - 1]);
+      step = isFinite(d) && d >= 0.5 && d <= 10 ? round2(d) : STEP_BY_EQUIP[ex.equip] || 2.5;
+    }
+    return { min, max, step, src, stepSrc };
+  };
+
+  // Vorschlag für eine Übung im laufenden Training, gestützt auf das letzte Training (je Gym, wenn gymgebunden)
+  Gym.coach = (ex, en, w) => {
+    if (Gym.S.settings.coach === false) return null;
+    if (ex.kind !== 'weight' && ex.kind !== 'body') return null;
+    const hist = Gym.exerciseHistory(ex.id, Gym.cmpGym(ex, w)).filter((h) => h.wid !== w.id);
+    if (!hist.length) return null;
+    const last = hist[hist.length - 1];
+    const sets = last.sets.filter((s) => s.r > 0);
+    if (!sets.length) return null;
+    const cfg = Gym.coachCfg(ex, en, hist);
+    const n = (v) => Gym.fmt.num(v, 2);
+    // Arbeitssätze sind die Sätze mit dem höchsten Gewicht; leichtere gelten als Aufwärmen
+    const top = (list) => Math.max(...list.map((s) => s.w || 0));
+    const W = top(sets);
+    const isWork = (s) => (s.w || 0) === W;
+    const reps = sets.filter(isWork).map((s) => s.r);
+    const range = cfg.min === cfg.max ? `${cfg.min}` : `${cfg.min}–${cfg.max}`;
+    let kind, weight = W, target, text, why;
+    if (!W) {
+      // Reines Körpergewicht: nur die Wiederholungen steigern
+      if (reps.every((r) => r >= cfg.max)) {
+        kind = 'top'; target = reps.slice();
+        text = 'Obergrenze erreicht';
+        why = `Alle Sätze haben ${cfg.max} oder mehr Wiederholungen. Nimm Zusatzgewicht oder eine schwerere Variante.`;
+      } else {
+        kind = 'rep'; target = reps.slice(); target[target.findIndex((r) => r < cfg.max)]++;
+        text = 'Eine Wiederholung mehr';
+        why = `Noch nicht alle Sätze schaffen ${cfg.max} Wiederholungen. Ein Satz bekommt eine Wiederholung mehr.`;
+      }
+    } else if (reps.every((r) => r >= cfg.max)) {
+      kind = 'up'; weight = round2(W + cfg.step); target = reps.map(() => cfg.min);
+      text = `Steigern auf ${n(weight)} kg`;
+      why = `Alle Sätze haben ${cfg.max} oder mehr Wiederholungen erreicht. Mit dem höheren Gewicht geht es bei ${cfg.min} Wiederholungen wieder los.`;
+    } else if (reps.every((r) => r >= cfg.min)) {
+      kind = 'rep'; target = reps.slice(); target[target.findIndex((r) => r < cfg.max)]++;
+      text = `${n(W)} kg, eine Wiederholung mehr`;
+      why = `Du liegst im Bereich ${range}, aber noch nicht in allen Sätzen oben. Erst wenn alle Sätze ${cfg.max} schaffen, steigt das Gewicht.`;
+    } else {
+      // Unter dem Bereich: beim zweiten Mal in Folge (bei gleichem oder höherem Gewicht) entlasten
+      const prev = hist.length > 1 ? hist[hist.length - 2].sets.filter((s) => s.r > 0) : null;
+      const prevTop = prev && prev.length ? top(prev) : 0;
+      const prevMiss = prev && prev.length && prevTop >= W && prev.filter((s) => (s.w || 0) === prevTop).some((s) => s.r < cfg.min);
+      if (prevMiss) {
+        kind = 'down'; weight = round2(Math.max(cfg.step, Math.round((W * 0.9) / cfg.step) * cfg.step));
+        target = reps.map(() => Math.round((cfg.min + cfg.max) / 2));
+        text = `Entlasten auf ${n(weight)} kg`;
+        why = `Zweimal in Folge lag ein Satz unter ${cfg.min} Wiederholungen. Mit etwa 10 % weniger Gewicht sauber neu aufbauen.`;
+      } else {
+        kind = 'hold'; target = reps.map((r) => Math.max(r, cfg.min));
+        text = `${n(W)} kg halten`;
+        why = `Mindestens ein Satz lag unter ${cfg.min} Wiederholungen. Gleiches Gewicht, Ziel sind ${cfg.min} in jedem Satz.`;
+      }
+    }
+    // Plan je Satz: Arbeitssätze bekommen das Ziel, leichtere Sätze bleiben wie beim letzten Mal
+    let wi = 0;
+    const plan = sets.map((s) => (isWork(s) ? { w: W ? weight : s.w, r: target[Math.min(wi++, target.length - 1)] } : { w: s.w, r: s.r }));
+    const rest = { w: W ? weight : null, r: target[target.length - 1] };
+    return { kind, weight, text, why, cfg, range, last, planAt: (i) => plan[i] || rest };
   };
 
   /* ---------- Trainingsarten und Vorschläge ---------- */

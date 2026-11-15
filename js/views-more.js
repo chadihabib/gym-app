@@ -471,6 +471,7 @@
             <div class="span2">
               ${toggle('autoRest', 'Pausentimer automatisch starten', 'Startet, sobald du einen Satz abhakst')}
               ${toggle('sound', 'Signalton und Vibration', 'Am Ende einer Pause')}
+              ${toggle('coach', 'Gewichtsvorschläge', 'Schlägt im Training Gewicht und Wiederholungen vor')}
             </div>
           </div>
           <div class="sec-head"><h2>Daten</h2></div>

@@ -153,12 +153,56 @@
   let cur = null; // { w, mode: 'live' | 'edit' }
   const persist = () => { if (cur && cur.mode === 'live') Gym.saveSoon(); };
 
-  const hint = (en, si, last) => {
+  const hint = (en, si, last, coach) => {
+    if (coach) {
+      // Vorschlag des Coachs. Wer heute im selben Satzblock vom Plan abweicht, behält sein Gewicht.
+      const p = coach.planAt(si);
+      let w = p.w;
+      for (let i = si - 1; i >= 0 && coach.planAt(i).w === p.w; i--) {
+        if (en.sets[i].w != null) { w = en.sets[i].w; break; }
+      }
+      return { w, r: p.r };
+    }
     let prev = null;
     for (let i = si - 1; i >= 0 && !prev; i--) if (en.sets[i].done || en.sets[i].r != null) prev = en.sets[i];
     const lt = last && last.length ? last[Math.min(si, last.length - 1)] : null;
     const pick = (a, b) => (a != null ? a : b != null ? b : null);
     return { w: pick(prev && prev.w, lt && lt.w), r: pick(lt && lt.r, prev && prev.r) };
+  };
+
+  // Coach: Erklärung des Vorschlags und Einstellungen je Übung
+  Gym.act.coachInfo = (el) => {
+    const c = cur, en = c.w.entries[+el.dataset.e], ex = Gym.ex(en.exId), co = Gym.coach(ex, en, c.w);
+    if (!co) return;
+    const S = Gym.S, cfg = co.cfg;
+    Gym.act.coachSave = (form) => {
+      const min = Gym.parseNum(form.elements.min.value), max = Gym.parseNum(form.elements.max.value), step = Gym.parseNum(form.elements.step.value);
+      if (!(min >= 1) || !(max >= min) || max > 100) return Gym.toast('Bitte einen gültigen Bereich eingeben, z. B. 8 bis 12');
+      if (!(step > 0) || step > 50) return Gym.toast('Bitte einen gültigen Gewichtsschritt eingeben');
+      S.exCoach[ex.id] = { min: Math.round(min), max: Math.round(max), step };
+      Gym.save(); Gym.closeModal(); Gym.render();
+    };
+    Gym.act.coachReset = () => { delete S.exCoach[ex.id]; Gym.save(); Gym.closeModal(); Gym.render(); };
+    const src = cfg.src === 'own' ? 'Von dir für diese Übung festgelegt.'
+      : cfg.src === 'routine' ? 'Bereich aus der Routine übernommen, Gewichtsschritt aus deinem Verlauf geschätzt.'
+      : 'Aus deinen letzten Trainings erkannt. Du kannst die Werte anpassen.';
+    Gym.modal({
+      title: 'Vorschlag: ' + ex.name,
+      body: `
+        <div class="coach-box">
+          <strong>${esc(co.text)}</strong>
+          <p>${esc(co.why)}</p>
+          <p class="muted small">Zuletzt am ${esc(fmt.dayMon(co.last.ts))}: ${co.last.sets.map((s) => esc(Gym.fmtSetShort(ex, s))).join(' · ')}</p>
+        </div>
+        <form data-submit="coachSave" class="form grid2">
+          <label>Wiederholungen von<input class="num" type="text" inputmode="numeric" name="min" value="${cfg.min}" autocomplete="off"></label>
+          <label>bis<input class="num" type="text" inputmode="numeric" name="max" value="${cfg.max}" autocomplete="off"></label>
+          <label class="span2">Gewichtsschritt (kg)<input class="num" type="text" inputmode="decimal" name="step" value="${esc(fmt.input(cfg.step))}" autocomplete="off"></label>
+          <p class="muted small span2">${src}</p>
+          <button class="btn primary span2">Speichern</button>
+        </form>
+        ${S.exCoach[ex.id] ? `<button class="btn ghost block" data-act="coachReset">Wieder automatisch bestimmen</button>` : ''}`,
+    });
   };
 
   const entryCard = (w, en, ei, mode) => {
@@ -168,8 +212,10 @@
     const gf = Gym.cmpGym(ex, w);
     const last = Gym.lastSets(en.exId, before, w.id, gf);
     const firstHere = !last && gf && Gym.lastSets(en.exId, before, w.id);
+    const coach = mode === 'live' ? Gym.coach(ex, en, w) : null;
+    const coachIcon = coach ? { up: icon.up, down: icon.down, top: icon.check }[coach.kind] || icon.right : '';
     const rows = en.sets.map((s, si) => {
-      const h = hint(en, si, last);
+      const h = hint(en, si, last, coach);
       return `<div class="set-row ${s.done && mode === 'live' ? 'done' : ''}">
         <span class="set-n">${si + 1}</span>
         <span class="set-prev">${last && last[si] ? esc(Gym.fmtSetShort(ex, last[si])) : '–'}</span>
@@ -185,6 +231,9 @@
         </div>
         <button class="icon-btn sm" data-act="entryMenu" data-e="${ei}" aria-label="Optionen für ${esc(ex.name)}">${icon.more}</button>
       </div>
+      ${coach ? `<button class="coach-line ${coach.kind}" data-act="coachInfo" data-e="${ei}" aria-label="Vorschlag: ${esc(coach.text)}. Antippen für Erklärung und Einstellungen">
+        ${coachIcon}<span class="coach-text"><strong>${esc(coach.text)}</strong> · Ziel ${esc(coach.range)} Wdh.</span>${icon.right}
+      </button>` : ''}
       <div class="set-row set-head">
         <span class="set-n">Satz</span><span class="set-prev">Zuletzt</span>
         ${fields.map(([, label]) => `<span class="set-col">${esc(label)}</span>`).join('')}
@@ -268,7 +317,7 @@
     const en = w.entries[ei], s = en.sets[si], ex = Gym.ex(en.exId);
     if (s.done) s.done = false;
     else {
-      const h = hint(en, si, Gym.lastSets(en.exId, Date.now(), w.id, Gym.cmpGym(ex, w)));
+      const h = hint(en, si, Gym.lastSets(en.exId, Date.now(), w.id, Gym.cmpGym(ex, w)), Gym.coach(ex, en, w));
       for (const [f] of Gym.fields(ex.kind)) if (s[f] == null && h[f] != null) s[f] = h[f];
       if (!Gym.setValid(ex, s)) {
         Gym.toast('Bitte erst die Werte eintragen');

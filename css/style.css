@@ -171,6 +171,19 @@ body.has-rest #view { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bo
 .type-btn small { font-size: 12px; opacity: 0.85; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .type-btn.plain { background: var(--surface); border-color: var(--border); color: var(--text); }
 .type-btn:active { transform: translateY(1px); }
+.coach-line {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 38px; margin-bottom: 6px; padding: 6px 8px 6px 10px;
+  border: 0; border-radius: 10px; background: var(--accent-wash); color: var(--text); text-align: left; font-size: 13.5px;
+}
+.coach-line .ic { width: 16px; height: 16px; color: var(--accent); }
+.coach-line.up .ic:first-child, .coach-line.top .ic:first-child { color: var(--good-text); }
+.coach-line.down .ic:first-child { color: var(--critical); }
+.coach-line .ic:last-child { color: var(--muted); }
+.coach-text { flex: 1; min-width: 0; color: var(--text-2); }
+.coach-text strong { color: var(--text); font-weight: 650; }
+.coach-box { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 12px; background: var(--accent-wash); }
+.coach-box strong { font-size: 16px; }
+.coach-box p { color: var(--text-2); }
 .sugg { display: flex; flex-direction: column; gap: 10px; }
 .sugg .sub { font-size: 12.5px; color: var(--muted); }
 .list.flat { padding: 0; }
