@@ -7,7 +7,7 @@
   /* ---------- Speicher ---------- */
   const blank = () => ({
     version: 1,
-    settings: { name: '', theme: 'dark', restSec: 90, autoRest: true, sound: true, barKg: 20, heightCm: null, weeklyGoal: 3, lastGymId: null, coach: true },
+    settings: { name: '', theme: 'dark', restSec: 90, restSecBig: 150, autoRest: true, sound: true, barKg: 20, heightCm: null, weeklyGoal: 3, lastGymId: null, coach: true },
     gyms: [],       // [{ id, name }]
     exBound: {},    // Übung -> true/false: nur im selben Gym vergleichen (überschreibt die Vorgabe)
     exCoach: {},    // Übung -> { min, max, step }: eigener Wiederholungsbereich und Gewichtsschritt
@@ -411,14 +411,26 @@
     const isWork = (s) => (s.w || 0) === W;
     const work = sets.filter(isWork);
     const reps = work.map(eff);
-    const capped = reps.map((r) => Math.min(r, cfg.max));
     const held = work.some((s) => s.rir);
     let kind, weight = W, target, text, why;
+    // Großer Gewichtsschritt (z. B. 5 kg an einer leichten Maschine): Nach dem Steigern wäre die
+    // Untergrenze oft nicht mehr erreichbar, und die App würde wieder entlasten. Deshalb wird erst
+    // gesteigert, wenn der erste Satz genug Wiederholungen hat, dass laut 1RM-Schätzung mit dem neuen
+    // Gewicht noch die Untergrenze drin ist. Höchstens EXTRA Wiederholungen über dem Bereich.
+    const EXTRA = 3;
+    const repsAt = (e, wt) => Math.floor(30 * (e / wt - 1) + 1e-9);
+    const req = W ? Math.ceil(30 * (Gym.e1rm(W + cfg.step, cfg.min) / W - 1) - 1e-9) : cfg.max;
+    const need = Math.min(cfg.max + EXTRA, Math.max(cfg.max, req));
+    const bigStep = need > cfg.max;
+    const rel = W ? Math.round((cfg.step / W) * 100) : 0;
+    const stepTip = req > cfg.max + EXTRA ? ` Der Schritt von ${n(cfg.step)} kg ist hier sehr groß (+${rel} %). Wenn möglich kleinere Scheiben oder Zwischengewichte nutzen und unten den Gewichtsschritt anpassen.` : '';
     // Maßgeblich ist der erste Arbeitssatz: Wer bis ans Limit trainiert, schafft in späteren Sätzen
     // fast immer weniger. Gesteigert wird, wenn der erste Satz oben ist und keiner unter dem Bereich liegt.
-    const firstTop = reps[0] >= cfg.max;
+    const capAt = (i) => (i === 0 ? need : cfg.max);
+    const capped = reps.map((r, i) => Math.min(r, capAt(i)));
+    const firstTop = reps[0] >= need;
     const allIn = reps.every((r) => r >= cfg.min);
-    const plusOne = () => { const t = capped.slice(); const i = t.findIndex((r) => r < cfg.max); if (i >= 0) t[i]++; return t; };
+    const plusOne = () => { const t = capped.slice(); const i = t.findIndex((r, k) => r < capAt(k)); if (i >= 0) t[i]++; return t; };
     if (!W) {
       // Reines Körpergewicht: nur die Wiederholungen steigern
       if (firstTop && allIn) {
@@ -433,13 +445,25 @@
     } else if (firstTop && allIn) {
       // Hatten alle Sätze an der Obergrenze noch deutlich Reserve, gleich zwei Schritte
       const steps = work.every((s) => s.rir === 4 && s.r >= cfg.max) ? 2 : 1;
-      kind = 'up'; weight = round2(W + steps * cfg.step); target = reps.map(() => cfg.min);
+      kind = 'up'; weight = round2(W + steps * cfg.step);
+      // Ziel je Satz: geschätzte Wiederholungen mit dem neuen Gewicht (Epley), höchstens die Obergrenze
+      target = reps.map((r) => Math.max(1, Math.min(cfg.max, repsAt(Gym.e1rm(W, r), weight))));
       text = `Steigern auf ${n(weight)} kg`;
-      why = `Der erste Satz hat ${cfg.max} oder mehr Wiederholungen erreicht und kein Satz lag unter ${cfg.min}. Mit dem höheren Gewicht geht es bei ${cfg.min} Wiederholungen wieder los.${steps === 2 ? ' Weil du überall deutlich Reserve hattest, sind es gleich zwei Schritte.' : ''}`;
+      why = `Der erste Satz hat ${need} oder mehr Wiederholungen erreicht und kein Satz lag unter ${cfg.min}. Mit ${n(weight)} kg sind laut Schätzung etwa ${target[0]} Wiederholungen im ersten Satz drin.`
+        + (bigStep && target[0] >= cfg.min ? ` Weil der Schritt von ${n(cfg.step)} kg hier groß ist (+${rel} %), wurde erst bei ${need} statt ${cfg.max} Wiederholungen gesteigert. So bleibst du danach im Bereich.` : '')
+        + (steps === 2 ? ' Weil du überall deutlich Reserve hattest, sind es gleich zwei Schritte.' : '') + stepTip;
+      if (target[0] < cfg.min - 2) {
+        // Der Sprung ist so groß, dass man weit unter den Bereich fiele: lieber einen kleineren Schritt
+        kind = 'top'; weight = W; target = capped.slice();
+        text = 'Gewichtsschritt zu groß';
+        why = `Du hast ${need} Wiederholungen erreicht. Mit ${n(W + cfg.step)} kg (+${rel} %) wären laut Schätzung nur etwa ${Math.max(1, repsAt(Gym.e1rm(W, reps[0]), W + cfg.step))} Wiederholungen drin, weit unter ${cfg.min}. Besser ein kleinerer Schritt (Zusatzscheibe, Zwischengewicht) – trag ihn unten als Gewichtsschritt ein. Gibt es keinen, stell einen breiteren Bereich ein (z. B. ${cfg.min}–20) oder steigere trotzdem und arbeite dich von unten hoch.`;
+      }
     } else if (allIn) {
       kind = 'rep'; target = plusOne();
       text = `${n(W)} kg, eine Wiederholung mehr`;
-      why = `Alle Sätze liegen im Bereich ${range}, der erste hat die ${cfg.max} aber noch nicht erreicht. Sobald er sie schafft, steigt das Gewicht.`;
+      why = bigStep && reps[0] >= cfg.max
+        ? `Der erste Satz hat die ${cfg.max} erreicht. Der nächste Schritt von ${n(cfg.step)} kg ist aber groß (+${rel} %): Mit ${n(W + cfg.step)} kg wären die ${cfg.min} Wiederholungen noch nicht drin. Gesteigert wird deshalb bei ${need} Wiederholungen im ersten Satz.${stepTip}`
+        : `Alle Sätze liegen im Bereich ${range}, der erste hat die ${need} aber noch nicht erreicht. Sobald er sie schafft, steigt das Gewicht.${bigStep ? ` (${need} statt ${cfg.max}, weil der Gewichtsschritt hier groß ist.)` : ''}`;
     } else {
       // Mindestens ein Satz unter dem Bereich. Entlastet wird nur, wenn schon der erste Satz
       // zweimal in Folge (bei gleichem oder höherem Gewicht) darunter lag.
@@ -447,7 +471,9 @@
       const prevTop = prev && prev.length ? top(prev) : 0;
       const prevFirst = prev && prev.length ? prev.find((s) => (s.w || 0) === prevTop) : null;
       const prevMiss = prevFirst && prevTop >= W && eff(prevFirst) < cfg.min;
-      if (reps[0] < cfg.min && prevMiss) {
+      // Nicht entlasten, solange der erste Satz besser wird (z. B. nach einem großen Gewichtssprung)
+      const better = prevFirst && Gym.e1rm(W, reps[0]) > Gym.e1rm(prevTop, eff(prevFirst)) + 1e-9;
+      if (reps[0] < cfg.min && prevMiss && !better) {
         kind = 'down'; weight = round2(Math.max(cfg.step, Math.round((W * 0.9) / cfg.step) * cfg.step));
         target = reps.map(() => Math.round((cfg.min + cfg.max) / 2));
         text = `Entlasten auf ${n(weight)} kg`;
@@ -471,10 +497,14 @@
 
   /* ---------- Trainingsarten und Vorschläge ---------- */
   Gym.TYPES = [
-    { id: 'push', label: 'Push', muscles: ['Brust', 'Schultern', 'Trizeps'], re: /push|drück/i, starter: ['bankdruecken', 'kh-schraegbank', 'kh-schulterdruecken', 'seitheben', 'trizepsdruecken', 'dips'] },
-    { id: 'pull', label: 'Pull', muscles: ['Rücken', 'Bizeps'], re: /pull|zieh/i, starter: ['klimmzuege', 'latzug', 'lh-rudern', 'kabelrudern', 'face-pulls', 'kh-curls'] },
-    { id: 'legs', label: 'Beine', muscles: ['Beine', 'Gesäß', 'Waden'], re: /bein|leg|unterkörper/i, starter: ['kniebeugen', 'rum-kreuzheben', 'beinpresse', 'beinbeuger', 'beinstrecker', 'wadenheben'] },
-    { id: 'upper', label: 'Oberkörper', muscles: ['Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps'], re: /oberkörper|upper/i, starter: ['bankdruecken', 'latzug', 'kh-schulterdruecken', 'lh-rudern', 'kh-curls', 'trizepsdruecken'] },
+    { id: 'push', label: 'Push', muscles: ['Brust', 'Schultern', 'Trizeps'], parts: ['Brust', 'Schulter seitlich', 'Trizeps'], re: /push|drück/i, starter: ['bankdruecken', 'kh-schraegbank', 'kh-schulterdruecken', 'seitheben', 'trizepsdruecken', 'dips'] },
+    { id: 'pull', label: 'Pull', muscles: ['Rücken', 'Bizeps'], parts: ['Rücken', 'Schulter hinten', 'Bizeps'], re: /pull|zieh/i, starter: ['klimmzuege', 'latzug', 'lh-rudern', 'kabelrudern', 'face-pulls', 'kh-curls'] },
+    { id: 'legs', label: 'Beine', muscles: ['Beine', 'Gesäß', 'Waden'], parts: ['Quadrizeps', 'Beinbeuger'], re: /bein|leg|unterkörper/i, starter: ['kniebeugen', 'rum-kreuzheben', 'beinpresse', 'beinbeuger', 'beinstrecker', 'wadenheben'] },
+    { id: 'upper', label: 'Oberkörper', muscles: ['Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps'], parts: ['Brust', 'Rücken', 'Schulter seitlich', 'Schulter hinten', 'Bizeps', 'Trizeps'], re: /oberkörper|upper/i, starter: ['bankdruecken', 'latzug', 'kh-schulterdruecken', 'lh-rudern', 'kh-curls', 'trizepsdruecken'] },
+    // Push/Pull mit Beinen: kniedominante Beinübungen (Quadrizeps) am Push-Tag, hüftdominante
+    // (Beinbeuger, rumänisches Kreuzheben) am Pull-Tag. Diese Arten werden beim Namen zuerst geprüft.
+    { id: 'pushlegs', label: 'Push + Beine', combo: true, muscles: ['Brust', 'Schultern', 'Trizeps', 'Beine', 'Gesäß', 'Waden'], parts: ['Brust', 'Schulter seitlich', 'Trizeps', 'Quadrizeps'], re: /(push|drück).*(bein|leg)|(bein|leg).*(push|drück)/i, starter: ['bankdruecken', 'kniebeugen', 'kh-schulterdruecken', 'beinstrecker', 'seitheben', 'trizepsdruecken', 'wadenheben'] },
+    { id: 'pulllegs', label: 'Pull + Beine', combo: true, muscles: ['Rücken', 'Bizeps', 'Schultern', 'Beine', 'Gesäß', 'Waden'], parts: ['Rücken', 'Schulter hinten', 'Bizeps', 'Beinbeuger'], re: /(pull|zieh).*(bein|leg)|(bein|leg).*(pull|zieh)/i, starter: ['latzug', 'rum-kreuzheben', 'lh-rudern', 'beinbeuger', 'face-pulls', 'kh-curls'] },
     { id: 'full', label: 'Ganzkörper', muscles: null, re: /ganzkörper|full/i, starter: ['kniebeugen', 'bankdruecken', 'latzug', 'kh-schulterdruecken', 'rum-kreuzheben', 'plank'] },
   ];
   Gym.type = (id) => Gym.TYPES.find((t) => t.id === id) || null;
@@ -482,7 +512,7 @@
   // Art eines Trainings: ausdrücklich gesetzt, sonst aus dem Namen oder den Muskelgruppen erschlossen
   Gym.workoutType = (w) => {
     if (w.type !== undefined) return Gym.type(w.type) ? w.type : null;
-    const byName = Gym.TYPES.find((t) => t.re.test(w.name || ''));
+    const byName = Gym.TYPES.find((t) => t.combo && t.re.test(w.name || '')) || Gym.TYPES.find((t) => t.re.test(w.name || ''));
     if (byName) return byName.id;
     const ms = w.entries.map((en) => Gym.ex(en.exId).muscle).filter((m) => m !== 'Bauch' && m !== 'Cardio');
     if (ms.length < 2) return null;
@@ -531,8 +561,15 @@
   /* ---------- Trainingsplan (freiwillig) ---------- */
   // Der Plan legt nur die Reihenfolge der Trainingsarten und ein Wochenziel an Sätzen fest.
   // Die Übungen bleiben frei. Ohne Plan (S.plan = null) ist nirgends etwas davon zu sehen.
-  Gym.MAIN_MUSCLES = ['Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps', 'Beine'];
-  // Richtwert: Sätze je Muskelgruppe und Woche
+  // Muskelteile mit Satz-Ziel. f = Anteil am Richtwert der Erfahrungsstufe: Kleinere Muskeln bekommen
+  // viel indirektes Training (Bizeps beim Rudern, hintere Schulter beim Rudern), brauchen daher weniger
+  // eigene Sätze. Eigene Richtwerte, keine Studienwerte. Vordere Schulter, Gesäß, Waden, Bauch ohne Ziel.
+  Gym.PLAN_PARTS = [
+    { m: 'Brust', f: 1 }, { m: 'Rücken', f: 1 }, { m: 'Schulter seitlich', f: 0.75 }, { m: 'Schulter hinten', f: 0.5 },
+    { m: 'Bizeps', f: 0.75 }, { m: 'Trizeps', f: 0.75 }, { m: 'Quadrizeps', f: 1 }, { m: 'Beinbeuger', f: 0.75 },
+  ];
+  Gym.MAIN_MUSCLES = Gym.PLAN_PARTS.map((x) => x.m);
+  // Richtwert: Sätze je großer Muskelgruppe und Woche
   Gym.PLAN_LEVELS = [
     { id: 'beginner', label: 'Einsteiger', sub: 'unter 1 Jahr Training', sets: [6, 10] },
     { id: 'mid', label: 'Fortgeschritten', sub: '1 bis 3 Jahre Training', sets: [10, 16] },
@@ -540,11 +577,11 @@
   ];
   // Aufteilungen je Zahl der Trainingstage; die erste ist die Empfehlung
   Gym.PLAN_SPLITS = {
-    2: [['full', 'full'], ['upper', 'legs']],
+    2: [['full', 'full'], ['pushlegs', 'pulllegs'], ['upper', 'legs']],
     3: [['full', 'full', 'full'], ['push', 'pull', 'legs']],
-    4: [['upper', 'legs', 'upper', 'legs'], ['push', 'pull', 'push', 'pull']],
+    4: [['upper', 'legs', 'upper', 'legs'], ['pushlegs', 'pulllegs', 'pushlegs', 'pulllegs']],
     5: [['push', 'pull', 'legs', 'upper', 'legs'], ['push', 'pull', 'legs', 'push', 'pull']],
-    6: [['push', 'pull', 'legs', 'push', 'pull', 'legs'], ['push', 'pull', 'push', 'pull', 'push', 'pull']],
+    6: [['push', 'pull', 'legs', 'push', 'pull', 'legs'], ['pushlegs', 'pulllegs', 'pushlegs', 'pulllegs', 'pushlegs', 'pulllegs']],
   };
   // Schwere und leichte Tage: Wiederholungsbereich für Grundübungen
   Gym.LOAD = {
@@ -553,7 +590,7 @@
   };
   Gym.planLevel = (p) => Gym.PLAN_LEVELS.find((l) => l.id === p.level) || Gym.PLAN_LEVELS[1];
   // Hauptmuskelgruppen einer Trainingsart (nur für sie gibt es ein Satz-Ziel)
-  Gym.planMuscles = (type) => { const t = Gym.type(type); return t ? (t.muscles || Gym.MAIN_MUSCLES).filter((m) => Gym.MAIN_MUSCLES.includes(m)) : []; };
+  Gym.planMuscles = (type) => { const t = Gym.type(type); return t ? (t.parts || Gym.MAIN_MUSCLES).slice() : []; };
   // Kommt eine Art mehrmals vor, wechseln sich auf Wunsch schwere und leichte Tage ab
   Gym.planSlots = (types, wave) => {
     const seen = {};
@@ -568,9 +605,10 @@
   // Ziel je Muskelgruppe: Sätze pro Woche (lo–hi), Häufigkeit pro Woche und Sätze pro Training
   Gym.planTargets = (p) => {
     const [lo, hi] = Gym.planLevel(p).sets, out = {};
-    for (const m of Gym.MAIN_MUSCLES) {
+    for (const { m, f } of Gym.PLAN_PARTS) {
       const freq = p.slots.length ? (p.slots.filter((s) => Gym.planMuscles(s.type).includes(m)).length / p.slots.length) * p.days : 0;
-      if (freq > 0) out[m] = { lo, hi, freq, session: Math.min(10, Math.max(2, Math.round((lo + hi) / 2 / freq))) };
+      const a = Math.round(lo * f), b = Math.round(hi * f);
+      if (freq > 0) out[m] = { lo: a, hi: b, freq, session: Math.min(10, Math.max(2, Math.round((a + b) / 2 / freq))) };
     }
     return out;
   };
@@ -596,7 +634,7 @@
   // Schwerer oder leichter Tag für diese Übung? Nur Grundübungen mit Gewicht, und nur wenn weder
   // ein eigener Bereich noch ein Ziel aus der Routine festgelegt ist.
   Gym.coachLoad = (ex, en, w) => {
-    if (!Gym.S.plan || ex.kind !== 'weight' || !Gym.SECONDARY[ex.id]) return null;
+    if (!Gym.S.plan || ex.kind !== 'weight' || !Gym.isCompound(ex)) return null;
     const own = Gym.S.exCoach[ex.id];
     if (own && own.min > 0 && own.max >= own.min) return null;
     if (en && en.target && TARGET_RE.test(String(en.target))) return null;
@@ -604,7 +642,7 @@
     return slot && Gym.LOAD[slot.load] ? slot.load : null;
   };
 
-  // Sätze je Muskelgruppe. Mitarbeitende Muskeln zählen halb, Aufwärmsätze (unter 60 % des
+  // Sätze je Muskelteil (Beine und Schultern aufgeteilt). Mitarbeitende Muskeln zählen halb, Aufwärmsätze (unter 60 % des
   // Höchstgewichts der Übung) zählen nicht.
   Gym.countSets = (entries, out, onlyDone) => {
     out = out || {};
@@ -615,7 +653,8 @@
       const top = ex.kind === 'weight' ? Math.max(0, ...sets.map((s) => s.w || 0)) : 0;
       const n = sets.filter((s) => (s.w || 0) >= top * 0.6).length;
       if (!n) continue;
-      out[ex.muscle] = (out[ex.muscle] || 0) + n;
+      const part = Gym.part(ex);
+      out[part] = (out[part] || 0) + n;
       for (const m of Gym.SECONDARY[ex.id] || []) out[m] = (out[m] || 0) + n / 2;
     }
     return out;

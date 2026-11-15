@@ -365,7 +365,7 @@
         return;
       }
       s.done = true;
-      if (Gym.S.settings.autoRest && (ex.kind === 'weight' || ex.kind === 'body')) Gym.startRest(Gym.S.settings.restSec || 90);
+      if (Gym.S.settings.autoRest && (ex.kind === 'weight' || ex.kind === 'body')) Gym.startRest(Gym.restFor(ex));
     }
     Gym.save();
     Gym.render();

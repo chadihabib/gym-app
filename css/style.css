@@ -463,7 +463,7 @@ input.set-in { min-height: 40px; padding: 4px; font-weight: 600; font-variant-nu
 .vol-card { display: flex; flex-direction: column; gap: 12px; }
 .vol-card .sub { font-size: 12.5px; color: var(--muted); }
 .vol { display: flex; flex-direction: column; gap: 8px; }
-.vol-row { display: grid; grid-template-columns: 78px minmax(0, 1fr) 84px; align-items: center; gap: 10px; font-size: 13.5px; }
+.vol-row { display: grid; grid-template-columns: 112px minmax(0, 1fr) 84px; align-items: center; gap: 10px; font-size: 13.5px; }
 .vol-track { position: relative; display: block; height: 22px; border-left: 1px solid var(--axis); }
 .vol-zone { position: absolute; top: 0; bottom: 0; background: var(--surface-2); border-left: 1px solid var(--axis); border-right: 1px solid var(--axis); }
 .vol-fill { position: absolute; left: 0; top: 5px; height: 12px; border-radius: 0 4px 4px 0; background: var(--series-1); }

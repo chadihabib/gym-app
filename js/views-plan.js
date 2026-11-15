@@ -77,7 +77,7 @@
           <div class="chips" role="group" aria-label="Erfahrung">
             ${Gym.PLAN_LEVELS.map((l) => `<button class="chip ${l.id === d.level ? 'on' : ''}" data-act="pgLevel" data-id="${l.id}" aria-pressed="${l.id === d.level}">${esc(l.label)}</button>`).join('')}
           </div>
-          <small class="muted">${esc(lv.sub)}: Richtwert ${lv.sets[0]}–${lv.sets[1]} Sätze je Muskelgruppe und Woche</small>
+          <small class="muted">${esc(lv.sub)}: Richtwert ${lv.sets[0]}–${lv.sets[1]} Sätze pro Woche für große Muskeln, kleinere entsprechend weniger</small>
         </div>
         <label class="switch-row"><span class="li-main"><strong>Schwere und leichte Tage</strong><small class="wrap">${wave
           ? 'Grundübungen abwechselnd mit 5–8 und 10–15 Wiederholungen. Sinnvoll, wenn dir auch Kraft wichtig ist. Für reinen Muskelaufbau nicht nötig.'
@@ -115,7 +115,8 @@
     if (volRange === 'week') sets = Gym.muscleSets(ws, Infinity);
     else if (volRange === 'last') sets = Gym.muscleSets(Gym.addDays(ws, -7), ws);
     else { sets = Gym.muscleSets(Gym.addDays(ws, -28), ws); for (const m in sets) sets[m] /= 4; }
-    const rows = Gym.MUSCLES.filter((m) => m !== 'Cardio' && (tg[m] || sets[m] > 0));
+    const order = Gym.COUNT_ORDER.concat(Object.keys(sets).filter((m) => !Gym.COUNT_ORDER.includes(m) && m !== 'Cardio'));
+    const rows = order.filter((m) => tg[m] || sets[m] > 0);
     const max = Math.max(1, ...rows.map((m) => Math.max(sets[m] || 0, tg[m] ? tg[m].hi : 0))) * 1.06;
     const pct = (v) => Math.round((v / max) * 1000) / 10;
     const aimed = rows.filter((m) => tg[m]);
@@ -137,8 +138,8 @@
         ${VOL.map(([k, l]) => `<button class="chip ${k === volRange ? 'on' : ''}" data-act="planVol" data-k="${k}" aria-pressed="${k === volRange}">${l}</button>`).join('')}
       </div>
       <div class="vol" role="list">${html}</div>
-      <div class="vol-legend"><i></i><span>Zielbereich für ${esc(lv.label)}: ${lv.sets[0]}–${lv.sets[1]} Sätze pro Woche</span></div>
-      <p class="muted small">Mitarbeitende Muskeln zählen halb, zum Beispiel der Trizeps beim Bankdrücken. Aufwärmsätze unter 60 % des Höchstgewichts zählen nicht. Der Zielbereich ist ein Richtwert: Mehr Sätze bringen mehr, aber mit abnehmendem Zusatznutzen.</p>
+      <div class="vol-legend"><i></i><span>Zielbereich für ${esc(lv.label)}: ${lv.sets[0]}–${lv.sets[1]} Sätze pro Woche für große Muskeln</span></div>
+      <p class="muted small">Mitarbeitende Muskeln zählen halb, zum Beispiel der Trizeps und die vordere Schulter beim Bankdrücken oder die hintere Schulter beim Rudern. Kleinere Muskeln haben deshalb ein niedrigeres Ziel: Bizeps, Trizeps, seitliche Schulter und Beinbeuger drei Viertel, hintere Schulter die Hälfte. Die vordere Schulter bekommt durch das Drücken genug und hat kein eigenes Ziel. Aufwärmsätze unter 60 % des Höchstgewichts zählen nicht. Die Ziele sind Richtwerte: Mehr Sätze bringen mehr, aber mit abnehmendem Zusatznutzen.</p>
     </section>`;
   };
   Gym.act.planVol = (el) => { volRange = el.dataset.k; Gym.render(); };

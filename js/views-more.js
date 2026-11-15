@@ -466,7 +466,9 @@
           <div class="sec-head"><h2>Training</h2></div>
           <div class="card form grid2">
             <label>Wochenziel${sel('weeklyGoal', [1, 2, 3, 4, 5, 6, 7].map((n) => [n, `${n}× pro Woche`]))}</label>
-            <label>Pausenzeit${sel('restSec', [30, 45, 60, 90, 120, 150, 180, 240, 300].map((s) => [s, fmt.clock(s) + ' min']))}</label>
+            <label>Pause Grundübungen${sel('restSecBig', [60, 90, 120, 150, 180, 210, 240, 300].map((s) => [s, fmt.clock(s) + ' min']))}</label>
+            <label>Pause Isolationsübungen${sel('restSec', [30, 45, 60, 75, 90, 120, 150, 180].map((s) => [s, fmt.clock(s) + ' min']))}</label>
+            <p class="muted small span2">Grundübungen (z. B. Bankdrücken, Kniebeugen, Rudern) brauchen längere Pausen, sonst fehlen im nächsten Satz Wiederholungen. Empfehlung: 2–3 min, Isolationsübungen 1–1,5 min.</p>
             <label>Stangengewicht${sel('barKg', [20, 15, 10, 7.5, 5].map((b) => [b, fmt.num(b, 1) + ' kg']))}</label>
             <label>Darstellung${sel('theme', [['dark', 'Dunkel'], ['light', 'Hell'], ['auto', 'Wie das System']], 'str')}</label>
             <div class="span2">

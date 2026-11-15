@@ -96,19 +96,38 @@
   ];
   Gym.LIBRARY = lib.map(([id, name, muscle, equip, kind]) => ({ id, name, muscle, equip, kind: kind || 'weight' }));
 
-  // Muskelgruppen, die bei einer Übung mitarbeiten. Ihre Sätze zählen in der Wochenübersicht des
-  // Trainingsplans halb. Übungen mit einem Eintrag gelten als Grundübungen.
-  const SCH = 'Schultern', TRI = 'Trizeps', BIZ = 'Bizeps', GES = 'Gesäß';
-  Gym.SECONDARY = {
-    bankdruecken: [SCH, TRI], schraegbank: [SCH, TRI], 'kh-bankdruecken': [SCH, TRI], 'kh-schraegbank': [SCH, TRI],
-    brustpresse: [SCH, TRI], liegestuetze: [SCH, TRI], dips: [SCH, TRI],
-    kreuzheben: ['Beine', GES], klimmzuege: [BIZ], latzug: [BIZ], 'lh-rudern': [BIZ], 'kh-rudern': [BIZ],
-    kabelrudern: [BIZ], 'tbar-rudern': [BIZ], rudermaschine: [BIZ],
-    schulterdruecken: [TRI], 'kh-schulterdruecken': [TRI], schulterpresse: [TRI],
-    'enges-bankdruecken': ['Brust', SCH],
-    kniebeugen: [GES], frontkniebeugen: [GES], beinpresse: [GES], hackenschmidt: [GES], ausfallschritte: [GES],
-    bulgarian: [GES], 'goblet-squat': [GES], 'rum-kreuzheben': [GES], 'hip-thrust': ['Beine'],
+  // Für die Satz-Zählung im Trainingsplan werden Beine und Schultern genauer aufgeteilt, weil die
+  // Teile sehr unterschiedlich viel Training bekommen (z. B. vordere Schulter durch jedes Drücken).
+  const Q = 'Quadrizeps', HB = 'Beinbeuger', SV = 'Schulter vorne', SS = 'Schulter seitlich', SH = 'Schulter hinten';
+  Gym.PARTS = { Beine: [Q, HB, 'Adduktoren'], Schultern: [SV, SS, SH] };
+  Gym.PART = {
+    kniebeugen: Q, frontkniebeugen: Q, beinpresse: Q, hackenschmidt: Q, ausfallschritte: Q, bulgarian: Q, 'goblet-squat': Q, beinstrecker: Q,
+    'rum-kreuzheben': HB, beinbeuger: HB, adduktoren: 'Adduktoren',
+    schulterdruecken: SV, 'kh-schulterdruecken': SV, schulterpresse: SV, frontheben: SV,
+    seitheben: SS, 'kabel-seitheben': SS, 'reverse-flys': SH, 'face-pulls': SH,
   };
+  // Teil, auf den die Sätze einer Übung zählen (eigene Übungen: selbst gewählt, sonst eine Annahme)
+  Gym.part = (ex) => ex.part || Gym.PART[ex.id] || (ex.muscle === 'Beine' ? Q : ex.muscle === 'Schultern' ? SS : ex.muscle);
+  // Reihenfolge der Zeilen in der Wochenübersicht
+  Gym.COUNT_ORDER = ['Brust', 'Rücken', SV, SS, SH, 'Bizeps', 'Trizeps', Q, HB, 'Gesäß', 'Adduktoren', 'Waden', 'Bauch'];
+
+  // Muskeln, die bei einer Übung mitarbeiten. Ihre Sätze zählen in der Wochenübersicht des
+  // Trainingsplans halb. Übungen mit einem Eintrag gelten als Grundübungen.
+  const TRI = 'Trizeps', BIZ = 'Bizeps', GES = 'Gesäß';
+  Gym.SECONDARY = {
+    bankdruecken: [SV, TRI], schraegbank: [SV, TRI], 'kh-bankdruecken': [SV, TRI], 'kh-schraegbank': [SV, TRI],
+    brustpresse: [SV, TRI], liegestuetze: [SV, TRI], dips: [SV, TRI],
+    kreuzheben: [HB, GES], klimmzuege: [BIZ], latzug: [BIZ], 'lh-rudern': [BIZ, SH], 'kh-rudern': [BIZ, SH],
+    kabelrudern: [BIZ, SH], 'tbar-rudern': [BIZ, SH], rudermaschine: [BIZ, SH],
+    schulterdruecken: [TRI, SS], 'kh-schulterdruecken': [TRI, SS], schulterpresse: [TRI, SS],
+    'enges-bankdruecken': ['Brust', SV],
+    kniebeugen: [GES], frontkniebeugen: [GES], beinpresse: [GES], hackenschmidt: [GES], ausfallschritte: [GES],
+    bulgarian: [GES], 'goblet-squat': [GES], 'rum-kreuzheben': [GES], 'hip-thrust': [HB],
+  };
+  // Grundübung (mehrgelenkig): längere Pause, schwere und leichte Tage laut Plan
+  Gym.isCompound = (ex) => !!(Gym.SECONDARY[ex.id] || ex.compound);
+  // Pause nach einem Satz: Grundübungen länger, weil kurze Pausen dort Wiederholungen kosten
+  Gym.restFor = (ex) => { const st = Gym.S.settings; return (Gym.isCompound(ex) ? st.restSecBig || 150 : st.restSec) || 90; };
 
   Gym.defaultRoutines = () => [
     { id: 'r-push', name: 'Push (Brust, Schultern, Trizeps)', items: [

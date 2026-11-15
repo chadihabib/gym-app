@@ -219,6 +219,9 @@
       target.name = name;
       target.muscle = form.elements.muscle.value;
       target.equip = form.elements.equip.value;
+      const part = form.elements.part.value;
+      if (part && (Gym.PARTS[target.muscle] || []).includes(part)) target.part = part; else delete target.part;
+      if (form.elements.compound.checked) target.compound = true; else delete target.compound;
       if (!ex) target.kind = form.elements.kind.value;
       Gym.save();
       Gym.closeModal();
@@ -230,6 +233,8 @@
         <label>Name<input name="name" required maxlength="60" value="${esc(ex ? ex.name : '')}" autocomplete="off"></label>
         <label>Muskelgruppe<select name="muscle">${opt(Gym.MUSCLES, ex ? ex.muscle : 'Brust')}</select></label>
         <label>Gerät<select name="equip">${opt(Gym.EQUIPMENT, ex ? ex.equip : 'Langhantel')}</select></label>
+        <label>Bei Beinen oder Schultern: welcher Teil?<select name="part"><option value="">Automatisch</option>${[].concat(Gym.PARTS.Beine, Gym.PARTS.Schultern).map((p) => `<option ${ex && ex.part === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+        <label class="switch-row"><span class="li-main"><strong>Grundübung</strong><small>Mehrere Gelenke, z. B. eine Presse oder Rudervariante: längere Pause</small></span><input type="checkbox" class="switch" name="compound" ${ex && ex.compound ? 'checked' : ''}></label>
         ${ex ? '' : `<label>Erfassung<select name="kind">${Object.entries(Gym.KINDS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select></label>`}
         <button class="btn primary block">Speichern</button>
       </form>`,
