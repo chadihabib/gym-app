@@ -1,5 +1,5 @@
 /* Service Worker: Netz zuerst, bei fehlender Verbindung aus dem Cache */
-const CACHE = 'gymapp-v4';
+const CACHE = 'gymapp-v5';
 const FILES = [
   './', 'index.html', 'css/style.css', 'icon.svg', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',

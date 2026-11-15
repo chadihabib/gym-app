@@ -157,26 +157,41 @@
     });
 
   /* ---------- Übungsauswahl ---------- */
-  const pick = { q: '', muscle: '', cb: null };
+  const pick = { q: '', muscle: '', cb: null, rank: () => 2, labels: [] };
   const pickList = () => {
     const q = pick.q.trim().toLowerCase();
     const list = Gym.exercises()
       .filter((e) => (!pick.muscle || e.muscle === pick.muscle) && (!q || e.name.toLowerCase().includes(q)))
-      .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+      .sort((a, b) => pick.rank(a) - pick.rank(b) || a.name.localeCompare(b.name, 'de'));
     if (!list.length) return `<p class="muted center pad">Keine Übung gefunden.</p>`;
-    return list.map((e) => `
+    // Gruppen: zuerst Übungen aus diesem Gym, dann bereits trainierte, dann der Rest
+    const groups = new Set(list.map((e) => pick.rank(e)));
+    let prev = -1;
+    return list.map((e) => {
+      const r = pick.rank(e);
+      const sep = groups.size > 1 && r !== prev ? `<div class="list-sep">${esc(pick.labels[r])}</div>` : '';
+      prev = r;
+      return `${sep}
       <button class="list-item" data-act="pickChoose" data-id="${esc(e.id)}">
         <span class="li-main"><strong>${esc(e.name)}</strong><small>${esc(e.muscle)} · ${esc(e.equip)}</small></span>
         ${icon.plus}
-      </button>`).join('');
+      </button>`;
+    }).join('');
   };
   const pickChips = () => ['', ...Gym.MUSCLES].map((m) =>
     `<button class="chip ${pick.muscle === m ? 'on' : ''}" data-act="pickMuscle" data-m="${esc(m)}">${esc(m || 'Alle')}</button>`).join('');
 
-  Gym.pickExercise = (cb) => {
-    pick.q = ''; pick.muscle = ''; pick.cb = cb;
+  // opts: { muscle: Muskelgruppe vorauswählen, gymId: Übungen aus diesem Gym zuerst, title }
+  Gym.pickExercise = (cb, opts) => {
+    opts = opts || {};
+    pick.q = ''; pick.muscle = opts.muscle || ''; pick.cb = cb;
+    const gymId = Gym.gym(opts.gymId) ? opts.gymId : null;
+    const here = new Set(), any = new Set();
+    for (const w of Gym.S.workouts) for (const en of w.entries) { any.add(en.exId); if (gymId && w.gymId === gymId) here.add(en.exId); }
+    pick.rank = (e) => (here.has(e.id) ? 0 : any.has(e.id) ? 1 : 2);
+    pick.labels = ['In diesem Gym gemacht', gymId ? 'In anderen Gyms gemacht' : 'Schon gemacht', 'Weitere Übungen'];
     Gym.modal({
-      title: 'Übung auswählen',
+      title: opts.title || 'Übung auswählen',
       body: `
         <div class="search">${icon.search}<input type="search" placeholder="Übung suchen" data-input="pickSearch" aria-label="Übung suchen"></div>
         <div class="chips scroll" id="pick-chips">${pickChips()}</div>

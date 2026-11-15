@@ -54,9 +54,20 @@
   };
   Gym.act.gymNew = () => Gym.gymForm(null, (g) => { Gym.S.settings.lastGymId = g.id; Gym.save(); Gym.render(); });
 
+  // Start nach Trainingsart: zeigt, wann die Art zuletzt dran war
+  const typeGrid = () => `
+    <div class="sec-head"><h2>Was trainierst du heute?</h2></div>
+    <div class="type-grid">
+      ${Gym.TYPES.map((t) => {
+        const last = Gym.sessionsOfType(t.id)[0];
+        return `<button class="type-btn" data-act="startWorkout" data-type="${t.id}"><strong>${esc(t.label)}</strong><small>${last ? 'zuletzt ' + esc(fmt.ago(last.start)) : 'noch nie'}</small></button>`;
+      }).join('')}
+      <button class="type-btn plain" data-act="startWorkout"><strong>Frei</strong><small>ohne Vorschläge</small></button>
+    </div>`;
+
   const startSection = () => `
     ${gymPicker()}
-    <button class="btn primary big block" data-act="startWorkout">${icon.plus} Leeres Training starten</button>
+    ${typeGrid()}
     <div class="sec-head"><h2>Aus Routine starten</h2><a href="#/routines">Verwalten</a></div>
     ${Gym.S.routines.length ? Gym.S.routines.map(routineCard).join('') : `<p class="muted">Noch keine Routinen. <a href="#/routine/new">Routine anlegen</a></p>`}`;
 
@@ -66,7 +77,10 @@
     const r = el.dataset.routine ? S.routines.find((x) => x.id === el.dataset.routine) : null;
     const hour = new Date().getHours();
     const dflt = hour < 11 ? 'Morgentraining' : hour < 17 ? 'Training am Mittag' : 'Abendtraining';
-    S.active = Gym.newWorkout(r ? r.name : dflt, r);
+    const t = Gym.type(el.dataset.type);
+    S.active = Gym.newWorkout(r ? r.name : t ? t.label : dflt, r);
+    if (t) S.active.type = t.id;
+    else if (!r) S.active.type = null; // „Frei“: bewusst ohne Art, also auch ohne Vorschläge
     Gym.unlockAudio();
     Gym.save();
     Gym.go('#/workout');
@@ -184,11 +198,65 @@
     </section>`;
   };
 
-  const editorBody = (w, mode) => `
+  const DEFAULT_NAMES = ['Morgentraining', 'Training am Mittag', 'Abendtraining', 'Training'];
+
+  // Vorschläge im laufenden Training: ein Tipp fügt die Übung hinzu
+  const suggPanel = (w) => {
+    const s = Gym.suggest(w);
+    if (!s) return '';
+    const now = Date.now();
+    const rows = s.list.map((st) => {
+      const ex = Gym.ex(st.exId);
+      const last = Gym.lastSets(st.exId, now, w.id, Gym.cmpGym(ex, w));
+      const info = s.fresh
+        ? `${ex.muscle} · ${ex.equip}`
+        : [st.last ? 'zuletzt ' + fmt.ago(st.last) : '', last && last.length ? Gym.fmtSetShort(ex, last[0]) : s.useGym && !st.here ? 'noch nie in diesem Gym' : ''].filter(Boolean).join(' · ');
+      return `<button class="list-item" data-act="suggAdd" data-id="${esc(st.exId)}"><span class="li-main"><strong>${esc(ex.name)}</strong><small>${esc(info)}</small></span>${icon.plus}</button>`;
+    }).join('');
+    const otherGym = s.useGym && !s.lastHere && s.last ? Gym.gymName(s.last.gymId) : '';
+    const likeLast = !w.entries.length && s.last
+      ? `<button class="btn ghost block" data-act="wkLikeLast">${icon.repeat} Wie am ${esc(fmt.dayMon(s.last.start))}${otherGym ? ' in ' + esc(otherGym) : ''} (${s.last.entries.length} Übungen)</button>`
+      : '';
+    if (!rows && !likeLast) return '';
+    const sub = s.fresh
+      ? 'Zum Einstieg. Sobald du trainiert hast, stehen hier deine eigenen Übungen.'
+      : `Was du ${s.useGym && s.lastHere ? 'hier ' : ''}sonst machst, länger nicht Gemachtes zuerst`;
+    return `<section class="card sugg">
+      <div><h3>Vorschläge für ${esc(s.type.label)}</h3><p class="sub">${esc(sub)}</p></div>
+      ${likeLast}
+      ${rows ? `<div class="list flat">${rows}</div>` : ''}
+    </section>`;
+  };
+
+  const editorBody = (w, mode) => {
+    const sugg = mode === 'live' ? suggPanel(w) : '';
+    return `
     ${w.entries.map((en, ei) => entryCard(w, en, ei, mode)).join('')}
-    ${w.entries.length ? '' : `<div class="empty small">${icon.dumbbell}<p>Füge deine erste Übung hinzu.</p></div>`}
-    <button class="btn block ${w.entries.length ? 'ghost' : 'primary'}" data-act="entryAdd">${icon.plus} Übung hinzufügen</button>
+    ${w.entries.length || sugg ? '' : `<div class="empty small">${icon.dumbbell}<p>Füge deine erste Übung hinzu.</p></div>`}
+    ${sugg}
+    <button class="btn block ${w.entries.length || sugg ? 'ghost' : 'primary'}" data-act="entryAdd">${icon.plus} ${sugg ? 'Andere Übung hinzufügen' : 'Übung hinzufügen'}</button>
     <label class="notes">Notizen<textarea data-input="wkNotes" rows="2" placeholder="Wie lief es heute?">${esc(w.notes || '')}</textarea></label>`;
+  };
+
+  // Übung ans Training anhängen; Satzzahl wie beim letzten Mal
+  const addEntry = (c, exId, n) => {
+    const last = Gym.lastSets(exId, Date.now(), c.w.id, Gym.cmpGym(Gym.ex(exId), c.w));
+    const count = n || (last ? Math.min(6, Math.max(1, last.length)) : 3);
+    c.w.entries.push({ id: Gym.uid(), exId, sets: Array.from({ length: count }, () => ({ w: null, r: null, done: false })) });
+  };
+  const showLastEntry = () => { const all = document.querySelectorAll('.entry'); if (all.length) all[all.length - 1].scrollIntoView({ block: 'center' }); };
+  Gym.act.suggAdd = (el) => { addEntry(cur, el.dataset.id); Gym.save(); Gym.render(); showLastEntry(); };
+  Gym.act.wkLikeLast = () => {
+    const c = cur, s = Gym.suggest(c.w);
+    if (!s || !s.last) return;
+    const seen = new Set();
+    for (const en of s.last.entries) {
+      if (seen.has(en.exId)) continue;
+      seen.add(en.exId);
+      addEntry(c, en.exId, Math.min(6, en.sets.length));
+    }
+    Gym.save(); Gym.render();
+  };
 
   Gym.act.setField = (el) => {
     const s = cur.w.entries[+el.dataset.e].sets[+el.dataset.s];
@@ -221,13 +289,11 @@
   Gym.act.entryAdd = () => {
     const c = cur;
     Gym.pickExercise((exId) => {
-      const last = Gym.lastSets(exId, Date.now(), c.w.id, Gym.cmpGym(Gym.ex(exId), c.w));
-      const n = last ? Math.min(6, Math.max(1, last.length)) : 3;
-      c.w.entries.push({ id: Gym.uid(), exId, sets: Array.from({ length: n }, () => ({ w: null, r: null, done: false })) });
+      addEntry(c, exId);
       if (c.mode === 'live') Gym.save();
       Gym.render();
-      window.scrollTo(0, document.body.scrollHeight);
-    });
+      showLastEntry();
+    }, { gymId: c.w.gymId });
   };
   Gym.act.entryMenu = (el) => {
     const ei = +el.dataset.e, w = cur.w, n = w.entries.length;
@@ -236,7 +302,8 @@
       body: `<div class="menu">
         ${ei > 0 ? `<button class="list-item" data-act="entryMove" data-e="${ei}" data-d="-1">${icon.up}<span class="li-main">Nach oben</span></button>` : ''}
         ${ei < n - 1 ? `<button class="list-item" data-act="entryMove" data-e="${ei}" data-d="1">${icon.down}<span class="li-main">Nach unten</span></button>` : ''}
-        <button class="list-item" data-act="entryReplace" data-e="${ei}">${icon.repeat}<span class="li-main">Übung ersetzen</span></button>
+        ${ei < n - 1 ? `<button class="list-item" data-act="entryLater" data-e="${ei}">${icon.history}<span class="li-main">Später machen<small>Ans Ende schieben, z. B. wenn das Gerät belegt ist</small></span></button>` : ''}
+        <button class="list-item" data-act="entryReplace" data-e="${ei}">${icon.repeat}<span class="li-main">Übung tauschen<small>Zeigt zuerst Übungen für ${esc(Gym.ex(w.entries[ei].exId).muscle)}</small></span></button>
         <a class="list-item" href="#/exercise/${esc(w.entries[ei].exId)}">${icon.chart}<span class="li-main">Verlauf der Übung ansehen</span></a>
         <button class="list-item danger" data-act="entryRemove" data-e="${ei}">${icon.trash}<span class="li-main">Übung entfernen</span></button>
       </div>`,
@@ -247,6 +314,12 @@
     [list[ei], list[ei + d]] = [list[ei + d], list[ei]];
     persist(); Gym.closeModal(); Gym.render();
   };
+  Gym.act.entryLater = (el) => {
+    const list = cur.w.entries;
+    list.push(list.splice(+el.dataset.e, 1)[0]);
+    persist(); Gym.closeModal(); Gym.render();
+    Gym.toast('Ans Ende geschoben');
+  };
   Gym.act.entryRemove = (el) => { cur.w.entries.splice(+el.dataset.e, 1); persist(); Gym.closeModal(); Gym.render(); };
   Gym.act.entryReplace = (el) => {
     const c = cur, en = c.w.entries[+el.dataset.e];
@@ -255,7 +328,7 @@
       en.sets = en.sets.map(() => ({ w: null, r: null, done: false }));
       if (c.mode === 'live') Gym.save();
       Gym.render();
-    });
+    }, { muscle: Gym.ex(en.exId).muscle, gymId: c.w.gymId, title: 'Übung tauschen' });
   };
 
   // Live-Training
@@ -278,7 +351,10 @@
           <button class="btn primary" data-act="wkFinish">${icon.check} Beenden</button>
         </header>
         <div class="content">
-          <div><button class="chip gym-chip ${w.gymId && Gym.gym(w.gymId) ? '' : 'dashed'}" data-act="wkGym">${icon.pin}${esc(Gym.gymName(w.gymId) || 'Gym wählen')}</button></div>
+          <div class="chips">
+            <button class="chip gym-chip ${w.gymId && Gym.gym(w.gymId) ? '' : 'dashed'}" data-act="wkGym">${icon.pin}${esc(Gym.gymName(w.gymId) || 'Gym wählen')}</button>
+            <button class="chip type-chip ${Gym.workoutType(w) ? '' : 'dashed'}" data-act="wkType">${icon.dumbbell}${esc(Gym.workoutType(w) ? Gym.type(Gym.workoutType(w)).label : 'Art wählen')}</button>
+          </div>
           ${editorBody(w, 'live')}
           <button class="btn block text danger" data-act="wkDiscard">Training verwerfen</button>
         </div>`,
@@ -291,6 +367,25 @@
       c.w.gymId = id;
       if (id) Gym.S.settings.lastGymId = id;
       Gym.save(); Gym.render();
+    });
+  };
+
+  Gym.act.wkType = () => {
+    const c = cur, now = Gym.workoutType(c.w) || '';
+    Gym.act.typeChoose = (el) => {
+      const t = Gym.type(el.dataset.id);
+      // Namen mitziehen, solange er noch der Standardname oder eine Trainingsart ist
+      if (DEFAULT_NAMES.includes(c.w.name) || Gym.TYPES.some((x) => x.label === c.w.name)) c.w.name = t ? t.label : DEFAULT_NAMES[3];
+      c.w.type = t ? t.id : null;
+      Gym.save(); Gym.closeModal(); Gym.render();
+    };
+    const row = (id, label, sub) => `<button class="list-item" data-act="typeChoose" data-id="${id}"><span class="li-main">${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ''}</span>${now === id ? icon.check : ''}</button>`;
+    Gym.modal({
+      title: 'Was trainierst du?',
+      body: `<div class="menu">
+        ${Gym.TYPES.map((t) => row(t.id, t.label, t.muscles ? t.muscles.join(', ') : 'Alle Muskelgruppen')).join('')}
+        ${row('', 'Keine Angabe', 'Ohne Vorschläge')}
+      </div>`,
     });
   };
 
@@ -348,6 +443,7 @@
             <label>Beginn<input type="time" name="time" value="${p(d.getHours())}:${p(d.getMinutes())}" data-input="editMeta"></label>
             <label class="span2">Dauer in Minuten<input class="num" type="text" inputmode="numeric" name="dur" value="${Math.round(Gym.wDur(w) / 60000)}" data-input="editMeta"></label>
             ${Gym.S.gyms.length ? `<label class="span2">Gym<select data-change="editGym"><option value="">Ohne Angabe</option>${Gym.S.gyms.map((g) => `<option value="${esc(g.id)}" ${g.id === w.gymId ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>` : ''}
+            <label class="span2">Art<select data-change="editType"><option value="">Keine Angabe</option>${Gym.TYPES.map((t) => `<option value="${t.id}" ${Gym.workoutType(w) === t.id ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}</select></label>
           </div>
           ${editorBody(w, 'edit')}
         </div>`,
@@ -362,6 +458,7 @@
     if (dur != null) w.end = w.start + dur * 60000;
   };
   Gym.act.editGym = (el) => { Gym.draft.gymId = el.value || null; Gym.render(); };
+  Gym.act.editType = (el) => { Gym.draft.type = el.value || null; };
   Gym.act.editSave = () => {
     const S = Gym.S, d = Gym.draft;
     const clean = Gym.cleanWorkout(d, false);

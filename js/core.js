@@ -89,6 +89,14 @@
       return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
     },
     secs: (sec) => (sec >= 60 ? `${Math.floor(sec / 60)}:${pad(Math.round(sec % 60))} min` : `${num(sec, 0)} s`),
+    ago: (ts) => {
+      const d = Math.round((Gym.dayStart(Date.now()) - Gym.dayStart(ts)) / 86400000);
+      if (d <= 0) return 'heute';
+      if (d === 1) return 'gestern';
+      if (d < 14) return `vor ${d} Tagen`;
+      if (d < 70) return `vor ${Math.round(d / 7)} Wochen`;
+      return `vor ${Math.round(d / 30)} Monaten`;
+    },
     rel: (ts) => {
       const diff = Math.round((Gym.dayStart(Date.now()) - Gym.dayStart(ts)) / 86400000);
       if (diff === 0) return 'Heute';
@@ -303,6 +311,65 @@
     let n = 0;
     while (have.has(t)) { n++; t = Gym.addDays(t, -7); }
     return n;
+  };
+
+  /* ---------- Trainingsarten und Vorschläge ---------- */
+  Gym.TYPES = [
+    { id: 'push', label: 'Push', muscles: ['Brust', 'Schultern', 'Trizeps'], re: /push|drück/i, starter: ['bankdruecken', 'kh-schraegbank', 'kh-schulterdruecken', 'seitheben', 'trizepsdruecken', 'dips'] },
+    { id: 'pull', label: 'Pull', muscles: ['Rücken', 'Bizeps'], re: /pull|zieh/i, starter: ['klimmzuege', 'latzug', 'lh-rudern', 'kabelrudern', 'face-pulls', 'kh-curls'] },
+    { id: 'legs', label: 'Beine', muscles: ['Beine', 'Gesäß', 'Waden'], re: /bein|leg|unterkörper/i, starter: ['kniebeugen', 'rum-kreuzheben', 'beinpresse', 'beinbeuger', 'beinstrecker', 'wadenheben'] },
+    { id: 'upper', label: 'Oberkörper', muscles: ['Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps'], re: /oberkörper|upper/i, starter: ['bankdruecken', 'latzug', 'kh-schulterdruecken', 'lh-rudern', 'kh-curls', 'trizepsdruecken'] },
+    { id: 'full', label: 'Ganzkörper', muscles: null, re: /ganzkörper|full/i, starter: ['kniebeugen', 'bankdruecken', 'latzug', 'kh-schulterdruecken', 'rum-kreuzheben', 'plank'] },
+  ];
+  Gym.type = (id) => Gym.TYPES.find((t) => t.id === id) || null;
+
+  // Art eines Trainings: ausdrücklich gesetzt, sonst aus dem Namen oder den Muskelgruppen erschlossen
+  Gym.workoutType = (w) => {
+    if (w.type !== undefined) return Gym.type(w.type) ? w.type : null;
+    const byName = Gym.TYPES.find((t) => t.re.test(w.name || ''));
+    if (byName) return byName.id;
+    const ms = w.entries.map((en) => Gym.ex(en.exId).muscle).filter((m) => m !== 'Bauch' && m !== 'Cardio');
+    if (ms.length < 2) return null;
+    for (const t of Gym.TYPES) {
+      if (t.muscles && ms.filter((m) => t.muscles.includes(m)).length / ms.length >= 0.75) return t.id;
+    }
+    return 'full';
+  };
+
+  // Frühere Trainings derselben Art, neueste zuerst
+  Gym.sessionsOfType = (type, skipId) =>
+    Gym.S.workouts.filter((w) => w.id !== skipId && Gym.workoutType(w) === type).sort((a, b) => b.start - a.start);
+
+  // Vorschläge für ein laufendes Training: die Übungen, die man bei dieser Art (in diesem Gym)
+  // regelmäßig macht. Reihenfolge: länger nicht Gemachtes zuerst.
+  Gym.suggest = (w) => {
+    const t = Gym.type(Gym.workoutType(w));
+    if (!t) return null;
+    const have = new Set(w.entries.map((en) => en.exId));
+    const gone = new Set(Gym.S.customExercises.filter((e) => e.archived).map((e) => e.id));
+    const all = Gym.sessionsOfType(t.id, w.id);
+    const useGym = Gym.S.gyms.length > 0 && !!Gym.gym(w.gymId);
+    const here = useGym ? all.filter((x) => x.gymId === w.gymId) : all;
+    // Grundlage sind die letzten 8 Trainings hier; gibt es hier noch zu wenige, zählen andere Gyms mit
+    const recent = here.slice(0, 8);
+    if (recent.length < 3) for (const x of all) { if (recent.length >= 8) break; if (!recent.includes(x)) recent.push(x); }
+    const stat = new Map();
+    recent.forEach((s, idx) => {
+      for (const exId of new Set(s.entries.map((en) => en.exId))) {
+        const st = stat.get(exId) || { exId, n: 0, last: 0, here: false, latest: false };
+        st.n++;
+        st.last = Math.max(st.last, s.start);
+        if (!useGym || s.gymId === w.gymId) st.here = true;
+        if (idx === 0) st.latest = true;
+        stat.set(exId, st);
+      }
+    });
+    // Regelmäßig heißt: mindestens zweimal dabei oder Teil des letzten Trainings
+    let list = Array.from(stat.values()).filter((st) => (st.n >= 2 || st.latest || recent.length < 3) && !gone.has(st.exId));
+    list.sort((a, b) => b.here - a.here || a.last - b.last || b.n - a.n);
+    let fresh = false;
+    if (!list.length) { fresh = true; list = t.starter.map((exId) => ({ exId, n: 0, last: 0, here: false })); }
+    return { type: t, fresh, useGym, list: list.filter((st) => !have.has(st.exId)).slice(0, 8), last: here[0] || all[0] || null, lastHere: !!here[0] };
   };
 
   /* ---------- Trainings anlegen ---------- */
