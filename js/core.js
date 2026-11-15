@@ -315,7 +315,7 @@
   };
 
   /* ---------- Coach: Gewichtsvorschläge nach doppelter Progression ---------- */
-  // Regel: Erst die Wiederholungen bis zum oberen Ende des Bereichs steigern, dann das Gewicht.
+  // Regel: Erst die Wiederholungen steigern, dann das Gewicht. Maßgeblich ist der erste Arbeitssatz.
   const BANDS = [[3, 5], [5, 8], [8, 12], [12, 15], [15, 20]];
   const STEP_BY_EQUIP = { Langhantel: 2.5, Kurzhantel: 2, Maschine: 5, Kabel: 2.5, Kettlebell: 4 };
   const round2 = (v) => Math.round(v * 100) / 100;
@@ -384,41 +384,50 @@
     const held = work.some((s) => s.rir);
     const range = cfg.min === cfg.max ? `${cfg.min}` : `${cfg.min}–${cfg.max}`;
     let kind, weight = W, target, text, why;
+    // Maßgeblich ist der erste Arbeitssatz: Wer bis ans Limit trainiert, schafft in späteren Sätzen
+    // fast immer weniger. Gesteigert wird, wenn der erste Satz oben ist und keiner unter dem Bereich liegt.
+    const firstTop = reps[0] >= cfg.max;
+    const allIn = reps.every((r) => r >= cfg.min);
+    const plusOne = () => { const t = capped.slice(); const i = t.findIndex((r) => r < cfg.max); if (i >= 0) t[i]++; return t; };
     if (!W) {
       // Reines Körpergewicht: nur die Wiederholungen steigern
-      if (reps.every((r) => r >= cfg.max)) {
-        kind = 'top'; target = work.map((s) => Math.max(s.r, cfg.max));
+      if (firstTop && allIn) {
+        kind = 'top'; target = work.map((s) => Math.max(s.r, cfg.min));
         text = 'Obergrenze erreicht';
-        why = `Alle Sätze haben ${cfg.max} oder mehr Wiederholungen. Nimm Zusatzgewicht oder eine schwerere Variante.`;
+        why = `Der erste Satz hat ${cfg.max} oder mehr Wiederholungen und alle Sätze liegen im Bereich ${range}. Nimm Zusatzgewicht oder eine schwerere Variante.`;
       } else {
-        kind = 'rep'; target = capped.slice(); target[target.findIndex((r) => r < cfg.max)]++;
+        kind = 'rep'; target = plusOne();
         text = 'Eine Wiederholung mehr';
-        why = `Noch nicht alle Sätze schaffen ${cfg.max} Wiederholungen. Ein Satz bekommt eine Wiederholung mehr.`;
+        why = `Der erste Satz hat die ${cfg.max} Wiederholungen noch nicht erreicht oder ein Satz liegt unter ${cfg.min}. Ein Satz bekommt eine Wiederholung mehr.`;
       }
-    } else if (reps.every((r) => r >= cfg.max)) {
+    } else if (firstTop && allIn) {
       // Hatten alle Sätze an der Obergrenze noch deutlich Reserve, gleich zwei Schritte
       const steps = work.every((s) => s.rir === 4 && s.r >= cfg.max) ? 2 : 1;
       kind = 'up'; weight = round2(W + steps * cfg.step); target = reps.map(() => cfg.min);
       text = `Steigern auf ${n(weight)} kg`;
-      why = `Alle Sätze haben ${cfg.max} oder mehr Wiederholungen erreicht. Mit dem höheren Gewicht geht es bei ${cfg.min} Wiederholungen wieder los.${steps === 2 ? ' Weil du überall deutlich Reserve hattest, sind es gleich zwei Schritte.' : ''}`;
-    } else if (reps.every((r) => r >= cfg.min)) {
-      kind = 'rep'; target = capped.slice(); target[target.findIndex((r) => r < cfg.max)]++;
+      why = `Der erste Satz hat ${cfg.max} oder mehr Wiederholungen erreicht und kein Satz lag unter ${cfg.min}. Mit dem höheren Gewicht geht es bei ${cfg.min} Wiederholungen wieder los.${steps === 2 ? ' Weil du überall deutlich Reserve hattest, sind es gleich zwei Schritte.' : ''}`;
+    } else if (allIn) {
+      kind = 'rep'; target = plusOne();
       text = `${n(W)} kg, eine Wiederholung mehr`;
-      why = `Du liegst im Bereich ${range}, aber noch nicht in allen Sätzen oben. Erst wenn alle Sätze ${cfg.max} schaffen, steigt das Gewicht.`;
+      why = `Alle Sätze liegen im Bereich ${range}, der erste hat die ${cfg.max} aber noch nicht erreicht. Sobald er sie schafft, steigt das Gewicht.`;
     } else {
-      // Unter dem Bereich: beim zweiten Mal in Folge (bei gleichem oder höherem Gewicht) entlasten
+      // Mindestens ein Satz unter dem Bereich. Entlastet wird nur, wenn schon der erste Satz
+      // zweimal in Folge (bei gleichem oder höherem Gewicht) darunter lag.
       const prev = hist.length > 1 ? hist[hist.length - 2].sets.filter((s) => s.r > 0) : null;
       const prevTop = prev && prev.length ? top(prev) : 0;
-      const prevMiss = prev && prev.length && prevTop >= W && prev.filter((s) => (s.w || 0) === prevTop).some((s) => eff(s) < cfg.min);
-      if (prevMiss) {
+      const prevFirst = prev && prev.length ? prev.find((s) => (s.w || 0) === prevTop) : null;
+      const prevMiss = prevFirst && prevTop >= W && eff(prevFirst) < cfg.min;
+      if (reps[0] < cfg.min && prevMiss) {
         kind = 'down'; weight = round2(Math.max(cfg.step, Math.round((W * 0.9) / cfg.step) * cfg.step));
         target = reps.map(() => Math.round((cfg.min + cfg.max) / 2));
         text = `Entlasten auf ${n(weight)} kg`;
-        why = `Zweimal in Folge lag ein Satz unter ${cfg.min} Wiederholungen. Mit etwa 10 % weniger Gewicht sauber neu aufbauen.`;
+        why = `Zweimal in Folge lag schon der erste Satz unter ${cfg.min} Wiederholungen. Mit etwa 10 % weniger Gewicht sauber neu aufbauen.`;
       } else {
         kind = 'hold'; target = capped.map((r) => Math.max(r, cfg.min));
         text = `${n(W)} kg halten`;
-        why = `Mindestens ein Satz lag unter ${cfg.min} Wiederholungen. Gleiches Gewicht, Ziel sind ${cfg.min} in jedem Satz.`;
+        why = reps[0] < cfg.min
+          ? `Der erste Satz lag unter ${cfg.min} Wiederholungen. Gleiches Gewicht, Ziel sind mindestens ${cfg.min}.`
+          : `Der erste Satz passt, aber ein späterer Satz lag unter ${cfg.min} Wiederholungen. Gleiches Gewicht, bis alle Sätze im Bereich ${range} liegen.`;
       }
     }
     if (held) why += ' Eingerechnet ist, dass du nicht in jedem Satz am Limit warst.';
