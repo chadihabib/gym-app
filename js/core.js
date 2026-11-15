@@ -7,7 +7,7 @@
   /* ---------- Speicher ---------- */
   const blank = () => ({
     version: 1,
-    settings: { name: '', theme: 'dark', restSec: 90, restSecBig: 150, autoRest: true, sound: true, barKg: 20, heightCm: null, weeklyGoal: 3, lastGymId: null, coach: true },
+    settings: { name: '', theme: 'dark', restSec: 90, restSecBig: 150, phase: 'auto', autoRest: true, sound: true, barKg: 20, heightCm: null, weeklyGoal: 3, lastGymId: null, coach: true },
     gyms: [],       // [{ id, name }]
     exBound: {},    // Übung -> true/false: nur im selben Gym vergleichen (überschreibt die Vorgabe)
     exCoach: {},    // Übung -> { min, max, step }: eigener Wiederholungsbereich und Gewichtsschritt
@@ -493,6 +493,75 @@
     const plan = sets.map((s) => (isWork(s) ? { w: W ? weight : s.w, r: target[Math.min(wi++, target.length - 1)] } : { w: s.w, r: s.r }));
     const rest = { w: W ? weight : null, r: target[target.length - 1] };
     return { kind, weight, text, why, cfg, range, load, last, planAt: (i) => plan[i] || rest };
+  };
+
+  /* ---------- Stillstand und Rückgang erkennen ---------- */
+  // Phase: Aufbau (bulk), Diät (cut) oder Erhalt (keep). 'auto': Diät, wenn das Körpergewicht laut
+  // Körperwerten über mindestens 2 Wochen um mehr als 0,5 % pro Woche fällt, sonst Aufbau.
+  Gym.PHASES = { bulk: 'Aufbau', cut: 'Diät', keep: 'Erhalt' };
+  Gym.phaseAuto = () => {
+    const from = Gym.dayKey(Gym.addDays(Date.now(), -28));
+    const pts = Gym.S.body.filter((b) => b.weight > 0 && b.date >= from).sort((a, b) => a.date.localeCompare(b.date));
+    if (pts.length < 2) return { phase: 'bulk', rate: null };
+    const a = pts[0], b = pts[pts.length - 1];
+    const days = (Gym.keyToTs(b.date) - Gym.keyToTs(a.date)) / 86400000;
+    if (days < 14) return { phase: 'bulk', rate: null };
+    const rate = ((b.weight - a.weight) / a.weight / (days / 7)) * 100; // % pro Woche
+    return { phase: rate < -0.5 ? 'cut' : 'bulk', rate };
+  };
+  Gym.phase = () => { const p = Gym.S.settings.phase; return Gym.PHASES[p] ? p : Gym.phaseAuto().phase; };
+
+  // Nur bei regelmäßigem Training: mindestens 4 Trainings der Übung in den letzten 6 Wochen,
+  // keine Lücke über 14 Tage. Gemessen wird das geschätzte 1RM des ersten Arbeitssatzes.
+  // Stillstand: die letzten 2 Trainings nicht mehr als 1 % über den 2 davor (nur im Aufbau).
+  // Rückgang: die letzten 2 Trainings mehr als 5 % unter dem Bestwert der 6 Wochen (immer).
+  Gym.stall = (ex, en, w) => {
+    if (ex.kind !== 'weight' && ex.kind !== 'body') return null;
+    const now = w && w.start ? Math.max(w.start, Date.now()) : Date.now();
+    const load = en ? Gym.coachLoad(ex, en, w) : null;
+    let hist = Gym.exerciseHistory(ex.id, Gym.cmpGym(ex, w || {})).filter((h) => (!w || h.wid !== w.id) && h.ts >= now - 42 * 86400000);
+    if (load) hist = hist.filter((h) => h.load === load);
+    if (hist.length < 4) return null;
+    for (let i = 0; i < hist.length; i++) {
+      const next = i + 1 < hist.length ? hist[i + 1].ts : now;
+      if (next - hist[i].ts > 14 * 86400000) return null;
+    }
+    const eff = (s) => s.r + (s.rir === 4 ? 3 : s.rir === 2 ? 1 : 0);
+    const val = (h) => {
+      const sets = h.sets.filter((s) => s.r > 0);
+      if (!sets.length) return 0;
+      const W = Math.max(...sets.map((s) => s.w || 0));
+      const first = sets.find((s) => (s.w || 0) === W);
+      if (ex.kind === 'body') return W ? 0 : eff(first); // mit Zusatzgewicht fehlt das Körpergewicht
+      return Gym.e1rm(W, eff(first));
+    };
+    const v = hist.map(val);
+    if (v.some((x) => !(x > 0))) return null;
+    const k = v.length, recent = Math.max(v[k - 1], v[k - 2]), before = Math.max(v[k - 3], v[k - 4]), best = Math.max(...v);
+    const phase = Gym.phase(), unit = ex.kind === 'body' ? 'Wiederholungen' : 'geschätztes 1RM';
+    if (recent < best * 0.95) {
+      return { kind: 'drop', phase, n: k, pct: Math.round((1 - recent / best) * 100),
+        text: 'Leistung gesunken',
+        why: `Die letzten zwei Trainings liegen ${Math.round((1 - recent / best) * 100)} % unter deinem Bestwert der letzten 6 Wochen (${unit} im ersten Arbeitssatz). Bei einzelnen Übungen ist das oft Tagesform. Sinkt es bei mehreren Übungen, fehlt eher Erholung: Schlaf, Essen${phase === 'cut' ? ' (in der Diät vor allem genug Eiweiß und kein zu großes Defizit)' : ''}, eventuell ein paar Sätze weniger.` };
+    }
+    if (phase === 'bulk' && recent <= before * 1.01) {
+      return { kind: 'stall', phase, n: k,
+        text: `Seit ${k >= 5 ? 'mehreren' : '4'} Trainings kein Fortschritt`,
+        why: `Die letzten zwei Trainings liegen nicht über den zwei davor (${unit} im ersten Arbeitssatz, ${k} Trainings in den letzten 6 Wochen). Möglichkeiten: einen anderen Wiederholungsbereich wählen, die Übung gegen eine ähnliche tauschen oder einen Satz mehr bzw. weniger machen. Bist du gerade in einer Diät, stell die Phase unter Einstellungen um, dann ist Halten kein Stillstand.` };
+    }
+    return null;
+  };
+
+  // Alle Übungen der letzten 2 Wochen prüfen (für die Wochenübersicht im Plan)
+  Gym.stallSummary = () => {
+    const since = Date.now() - 14 * 86400000, seen = new Map();
+    for (const w of Gym.sorted()) if (w.start >= since) for (const en of w.entries) seen.set(en.exId, w.gymId || null);
+    const out = { stall: [], drop: [] };
+    for (const [exId, gymId] of seen) {
+      const ex = Gym.ex(exId), st = Gym.stall(ex, null, { gymId, start: Date.now() });
+      if (st) out[st.kind].push(ex.name);
+    }
+    return out;
   };
 
   /* ---------- Trainingsarten und Vorschläge ---------- */

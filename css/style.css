@@ -181,6 +181,10 @@ button.set-n.res { background: var(--accent-wash); color: var(--accent); }
 .coach-line .ic { width: 16px; height: 16px; color: var(--accent); }
 .coach-line.up .ic:first-child, .coach-line.top .ic:first-child { color: var(--good-text); }
 .coach-line.down .ic:first-child { color: var(--critical); }
+.stall-note { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text-2); font-size: 13.5px; }
+.coach-line.stall { background: var(--surface-2, var(--accent-wash)); }
+.coach-line.stall .ic:first-child { color: var(--muted); }
+.coach-line.stall.drop .ic:first-child { color: var(--critical); }
 .coach-line .ic:last-child { color: var(--muted); }
 .coach-text { flex: 1; min-width: 0; color: var(--text-2); }
 .coach-text strong { color: var(--text); font-weight: 650; }

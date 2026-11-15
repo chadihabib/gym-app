@@ -469,6 +469,8 @@
             <label>Pause Grundübungen${sel('restSecBig', [60, 90, 120, 150, 180, 210, 240, 300].map((s) => [s, fmt.clock(s) + ' min']))}</label>
             <label>Pause Isolationsübungen${sel('restSec', [30, 45, 60, 75, 90, 120, 150, 180].map((s) => [s, fmt.clock(s) + ' min']))}</label>
             <p class="muted small span2">Grundübungen (z. B. Bankdrücken, Kniebeugen, Rudern) brauchen längere Pausen, sonst fehlen im nächsten Satz Wiederholungen. Empfehlung: 2–3 min, Isolationsübungen 1–1,5 min.</p>
+            <label>Phase${sel('phase', [['auto', 'Automatisch (' + (Gym.PHASES[Gym.phaseAuto().phase]) + ')'], ['bulk', 'Aufbau'], ['cut', 'Diät'], ['keep', 'Erhalt']], 'str')}</label>
+            <p class="muted small span2">Die Phase steuert die Fortschritts-Hinweise: Im Aufbau meldet die App Stillstand, in Diät und Erhalt nur einen Rückgang. Automatisch heißt: Diät, wenn dein Körpergewicht laut Körperwerten seit mindestens 2 Wochen um mehr als 0,5 % pro Woche sinkt${Gym.phaseAuto().rate != null ? ` (gerade ${fmt.num(Gym.phaseAuto().rate, 1)} % pro Woche)` : ''}.</p>
             <label>Stangengewicht${sel('barKg', [20, 15, 10, 7.5, 5].map((b) => [b, fmt.num(b, 1) + ' kg']))}</label>
             <label>Darstellung${sel('theme', [['dark', 'Dunkel'], ['light', 'Hell'], ['auto', 'Wie das System']], 'str')}</label>
             <div class="span2">

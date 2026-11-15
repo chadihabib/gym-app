@@ -231,6 +231,24 @@
     });
   };
 
+  // Stillstand: Erklärung und Möglichkeiten
+  Gym.act.stallInfo = (el) => {
+    const c = cur, ei = +el.dataset.e, en = c.w.entries[ei], ex = Gym.ex(en.exId), st = Gym.stall(ex, en, c.w);
+    if (!st) return;
+    Gym.act.stallRange = () => { Gym.closeModal(); Gym.act.coachInfo({ dataset: { e: ei } }); };
+    Gym.act.stallSwap = () => { Gym.closeModal(); Gym.act.entryReplace({ dataset: { e: ei } }); };
+    Gym.modal({
+      title: ex.name,
+      body: `
+        <div class="coach-box"><strong>${esc(st.text)}</strong><p>${esc(st.why)}</p>
+          <p class="muted small">Phase: ${esc(Gym.PHASES[st.phase])}${Gym.S.settings.phase && Gym.PHASES[Gym.S.settings.phase] ? '' : ' (automatisch)'} · änderbar unter Einstellungen</p></div>
+        <div class="menu">
+          <button class="list-item" data-act="stallRange">${icon.edit}<span class="li-main">Wiederholungsbereich ändern<small>z. B. von 8–12 auf 6–10 oder 12–15</small></span></button>
+          <button class="list-item" data-act="stallSwap">${icon.repeat}<span class="li-main">Übung tauschen<small>Eine ähnliche Übung setzt einen neuen Reiz</small></span></button>
+        </div>`,
+    });
+  };
+
   const entryCard = (w, en, ei, mode) => {
     const ex = Gym.ex(en.exId);
     const fields = Gym.fields(ex.kind);
@@ -240,6 +258,8 @@
     const firstHere = !last && gf && Gym.lastSets(en.exId, before, w.id);
     const coach = mode === 'live' ? Gym.coach(ex, en, w) : null;
     const coachIcon = coach ? { up: icon.up, down: icon.down, top: icon.check }[coach.kind] || icon.right : '';
+    // Stillstand oder Rückgang: nur im laufenden Training, nicht wenn ohnehin gerade gesteigert wird
+    const stall = coach && coach.kind !== 'up' ? Gym.stall(ex, en, w) : null;
     const rows = en.sets.map((s, si) => {
       const h = hint(en, si, last, coach);
       return `<div class="set-row ${s.done && mode === 'live' ? 'done' : ''}">
@@ -261,6 +281,9 @@
       </div>
       ${coach ? `<button class="coach-line ${coach.kind}" data-act="coachInfo" data-e="${ei}" aria-label="Vorschlag: ${esc(coach.text)}. Antippen für Erklärung und Einstellungen">
         ${coachIcon}<span class="coach-text"><strong>${esc(coach.text)}</strong> · Ziel ${esc(coach.range)} Wdh.</span>${icon.right}
+      </button>` : ''}
+      ${stall ? `<button class="coach-line stall ${stall.kind}" data-act="stallInfo" data-e="${ei}" aria-label="Hinweis: ${esc(stall.text)}. Antippen für Möglichkeiten">
+        ${icon.chart}<span class="coach-text"><strong>${esc(stall.text)}</strong></span>${icon.right}
       </button>` : ''}
       <div class="set-row set-head">
         <span class="set-n">Satz</span><span class="set-prev">Zuletzt</span>

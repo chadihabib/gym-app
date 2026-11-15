@@ -132,12 +132,19 @@
         <span class="vol-val"><b>${esc(fmt.num(v, 1))}${t && v >= t.lo && v <= t.hi ? icon.check : ''}</b><small>${esc(note)}</small></span>
       </div>`;
     }).join('');
+    const ss = Gym.stallSummary();
+    const stallNote = ss.drop.length >= 2
+      ? `<p class="stall-note"><strong>Bei ${ss.drop.length} Übungen ist die Leistung gesunken</strong> (${esc(ss.drop.join(', '))}). Wenn mehrere Übungen gleichzeitig nachlassen, fehlt meist Erholung: Schlaf, Essen, eventuell ein paar Sätze weniger pro Woche.</p>`
+      : ss.stall.length >= 3
+        ? `<p class="stall-note"><strong>Bei ${ss.stall.length} Übungen seit 4 Trainings kein Fortschritt</strong> (${esc(ss.stall.join(', '))}). Stockt vieles zugleich, liegt es eher an Erholung oder Volumen als an den einzelnen Übungen.</p>`
+        : '';
     return `<section class="card vol-card">
       <div><h3>Sätze pro Muskelgruppe</h3><p class="sub">${hit} von ${aimed.length} Muskelgruppen ${volRange === 'week' ? 'haben das Wochenziel schon erreicht' : 'haben das Wochenziel erreicht'}</p></div>
       <div class="chips" role="group" aria-label="Zeitraum">
         ${VOL.map(([k, l]) => `<button class="chip ${k === volRange ? 'on' : ''}" data-act="planVol" data-k="${k}" aria-pressed="${k === volRange}">${l}</button>`).join('')}
       </div>
       <div class="vol" role="list">${html}</div>
+      ${stallNote}
       <div class="vol-legend"><i></i><span>Zielbereich für ${esc(lv.label)}: ${lv.sets[0]}–${lv.sets[1]} Sätze pro Woche für große Muskeln</span></div>
       <p class="muted small">Mitarbeitende Muskeln zählen halb, zum Beispiel der Trizeps und die vordere Schulter beim Bankdrücken oder die hintere Schulter beim Rudern. Kleinere Muskeln haben deshalb ein niedrigeres Ziel: Bizeps, Trizeps, seitliche Schulter und Beinbeuger drei Viertel, hintere Schulter die Hälfte. Die vordere Schulter bekommt durch das Drücken genug und hat kein eigenes Ziel. Aufwärmsätze unter 60 % des Höchstgewichts zählen nicht. Die Ziele sind Richtwerte: Mehr Sätze bringen mehr, aber mit abnehmendem Zusatznutzen.</p>
     </section>`;
