@@ -375,44 +375,53 @@
     const top = (list) => Math.max(...list.map((s) => s.w || 0));
     const W = top(sets);
     const isWork = (s) => (s.w || 0) === W;
-    const reps = sets.filter(isWork).map((s) => s.r);
+    // Standard: Jeder Satz ging ans Limit. Ist ein Satz als „nicht am Limit“ markiert (s.rir),
+    // zählt die geschätzte Reserve mit: 1–2 übrig = +1, 3 oder mehr übrig = +3 Wiederholungen.
+    const eff = (s) => s.r + (s.rir === 4 ? 3 : s.rir === 2 ? 1 : 0);
+    const work = sets.filter(isWork);
+    const reps = work.map(eff);
+    const capped = reps.map((r) => Math.min(r, cfg.max));
+    const held = work.some((s) => s.rir);
     const range = cfg.min === cfg.max ? `${cfg.min}` : `${cfg.min}–${cfg.max}`;
     let kind, weight = W, target, text, why;
     if (!W) {
       // Reines Körpergewicht: nur die Wiederholungen steigern
       if (reps.every((r) => r >= cfg.max)) {
-        kind = 'top'; target = reps.slice();
+        kind = 'top'; target = work.map((s) => Math.max(s.r, cfg.max));
         text = 'Obergrenze erreicht';
         why = `Alle Sätze haben ${cfg.max} oder mehr Wiederholungen. Nimm Zusatzgewicht oder eine schwerere Variante.`;
       } else {
-        kind = 'rep'; target = reps.slice(); target[target.findIndex((r) => r < cfg.max)]++;
+        kind = 'rep'; target = capped.slice(); target[target.findIndex((r) => r < cfg.max)]++;
         text = 'Eine Wiederholung mehr';
         why = `Noch nicht alle Sätze schaffen ${cfg.max} Wiederholungen. Ein Satz bekommt eine Wiederholung mehr.`;
       }
     } else if (reps.every((r) => r >= cfg.max)) {
-      kind = 'up'; weight = round2(W + cfg.step); target = reps.map(() => cfg.min);
+      // Hatten alle Sätze an der Obergrenze noch deutlich Reserve, gleich zwei Schritte
+      const steps = work.every((s) => s.rir === 4 && s.r >= cfg.max) ? 2 : 1;
+      kind = 'up'; weight = round2(W + steps * cfg.step); target = reps.map(() => cfg.min);
       text = `Steigern auf ${n(weight)} kg`;
-      why = `Alle Sätze haben ${cfg.max} oder mehr Wiederholungen erreicht. Mit dem höheren Gewicht geht es bei ${cfg.min} Wiederholungen wieder los.`;
+      why = `Alle Sätze haben ${cfg.max} oder mehr Wiederholungen erreicht. Mit dem höheren Gewicht geht es bei ${cfg.min} Wiederholungen wieder los.${steps === 2 ? ' Weil du überall deutlich Reserve hattest, sind es gleich zwei Schritte.' : ''}`;
     } else if (reps.every((r) => r >= cfg.min)) {
-      kind = 'rep'; target = reps.slice(); target[target.findIndex((r) => r < cfg.max)]++;
+      kind = 'rep'; target = capped.slice(); target[target.findIndex((r) => r < cfg.max)]++;
       text = `${n(W)} kg, eine Wiederholung mehr`;
       why = `Du liegst im Bereich ${range}, aber noch nicht in allen Sätzen oben. Erst wenn alle Sätze ${cfg.max} schaffen, steigt das Gewicht.`;
     } else {
       // Unter dem Bereich: beim zweiten Mal in Folge (bei gleichem oder höherem Gewicht) entlasten
       const prev = hist.length > 1 ? hist[hist.length - 2].sets.filter((s) => s.r > 0) : null;
       const prevTop = prev && prev.length ? top(prev) : 0;
-      const prevMiss = prev && prev.length && prevTop >= W && prev.filter((s) => (s.w || 0) === prevTop).some((s) => s.r < cfg.min);
+      const prevMiss = prev && prev.length && prevTop >= W && prev.filter((s) => (s.w || 0) === prevTop).some((s) => eff(s) < cfg.min);
       if (prevMiss) {
         kind = 'down'; weight = round2(Math.max(cfg.step, Math.round((W * 0.9) / cfg.step) * cfg.step));
         target = reps.map(() => Math.round((cfg.min + cfg.max) / 2));
         text = `Entlasten auf ${n(weight)} kg`;
         why = `Zweimal in Folge lag ein Satz unter ${cfg.min} Wiederholungen. Mit etwa 10 % weniger Gewicht sauber neu aufbauen.`;
       } else {
-        kind = 'hold'; target = reps.map((r) => Math.max(r, cfg.min));
+        kind = 'hold'; target = capped.map((r) => Math.max(r, cfg.min));
         text = `${n(W)} kg halten`;
         why = `Mindestens ein Satz lag unter ${cfg.min} Wiederholungen. Gleiches Gewicht, Ziel sind ${cfg.min} in jedem Satz.`;
       }
     }
+    if (held) why += ' Eingerechnet ist, dass du nicht in jedem Satz am Limit warst.';
     // Plan je Satz: Arbeitssätze bekommen das Ziel, leichtere Sätze bleiben wie beim letzten Mal
     let wi = 0;
     const plan = sets.map((s) => (isWork(s) ? { w: W ? weight : s.w, r: target[Math.min(wi++, target.length - 1)] } : { w: s.w, r: s.r }));
@@ -497,7 +506,7 @@
     out.entries = out.entries
       .map((en) => {
         const ex = Gym.ex(en.exId);
-        en.sets = en.sets.filter((s) => (!onlyDone || s.done) && Gym.setValid(ex, s)).map((s) => ({ w: s.w, r: s.r, done: true }));
+        en.sets = en.sets.filter((s) => (!onlyDone || s.done) && Gym.setValid(ex, s)).map((s) => Object.assign({ w: s.w, r: s.r, done: true }, s.rir ? { rir: s.rir } : {}));
         return en;
       })
       .filter((en) => en.sets.length);

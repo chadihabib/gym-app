@@ -501,10 +501,10 @@
   Gym.act.exportJson = () => { download(`gymapp-sicherung-${Gym.dayKey(Date.now())}.json`, JSON.stringify(Gym.S, null, 2), 'application/json'); Gym.toast('Sicherung erstellt'); };
   Gym.act.exportCsv = () => {
     const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-    const lines = [['Datum', 'Uhrzeit', 'Training', 'Gym', 'Übung', 'Muskelgruppe', 'Satz', 'Gewicht/Distanz', 'Wdh./Zeit'].map(q).join(';')];
+    const lines = [['Datum', 'Uhrzeit', 'Training', 'Gym', 'Übung', 'Muskelgruppe', 'Satz', 'Gewicht/Distanz', 'Wdh./Zeit', 'Reserve'].map(q).join(';')];
     for (const w of Gym.sorted()) for (const en of w.entries) {
       const ex = Gym.ex(en.exId);
-      en.sets.forEach((s, i) => lines.push([Gym.dayKey(w.start), fmt.time(w.start), w.name, Gym.gymName(w.gymId), ex.name, ex.muscle, i + 1, fmt.input(s.w), fmt.input(s.r)].map(q).join(';')));
+      en.sets.forEach((s, i) => lines.push([Gym.dayKey(w.start), fmt.time(w.start), w.name, Gym.gymName(w.gymId), ex.name, ex.muscle, i + 1, fmt.input(s.w), fmt.input(s.r), s.rir === 4 ? '3+' : s.rir === 2 ? '1-2' : ''].map(q).join(';')));
     }
     download(`gymapp-trainings-${Gym.dayKey(Date.now())}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
   };

@@ -170,6 +170,29 @@
     return { w: pick(prev && prev.w, lt && lt.w), r: pick(lt && lt.r, prev && prev.r) };
   };
 
+  // Anstrengung: Standard ist „am Limit“. Nur Ausnahmen werden am Satz markiert (Antippen der Satznummer).
+  const EFFORT = [
+    [0, 'Am Limit', 'Standard: Mehr wäre nicht gegangen'],
+    [2, 'Nicht ganz am Limit', '1 bis 2 Wiederholungen wären noch gegangen'],
+    [4, 'Deutlich Reserve', '3 oder mehr Wiederholungen wären noch gegangen'],
+  ];
+  Gym.act.setEffort = (el) => {
+    const c = cur, s = c.w.entries[+el.dataset.e].sets[+el.dataset.s], now = s.rir || 0;
+    Gym.act.effortChoose = (b) => {
+      const v = +b.dataset.v;
+      if (v) s.rir = v; else delete s.rir;
+      if (c.mode === 'live') Gym.save();
+      Gym.closeModal(); Gym.render();
+    };
+    Gym.modal({
+      title: `Satz ${+el.dataset.s + 1}: Wie schwer war er?`,
+      body: `<div class="menu">
+        ${EFFORT.map(([v, label, sub]) => `<button class="list-item" data-act="effortChoose" data-v="${v}"><span class="li-main">${label}<small>${sub}</small></span>${now === v ? icon.check : ''}</button>`).join('')}
+      </div>
+      <p class="muted small">Die App geht davon aus, dass jeder Satz ans Limit ging. Markiere nur die Ausnahmen, dann rechnet der nächste Vorschlag die Reserve ein.</p>`,
+    });
+  };
+
   // Coach: Erklärung des Vorschlags und Einstellungen je Übung
   Gym.act.coachInfo = (el) => {
     const c = cur, en = c.w.entries[+el.dataset.e], ex = Gym.ex(en.exId), co = Gym.coach(ex, en, c.w);
@@ -192,7 +215,8 @@
         <div class="coach-box">
           <strong>${esc(co.text)}</strong>
           <p>${esc(co.why)}</p>
-          <p class="muted small">Zuletzt am ${esc(fmt.dayMon(co.last.ts))}: ${co.last.sets.map((s) => esc(Gym.fmtSetShort(ex, s))).join(' · ')}</p>
+          <p class="muted small">Zuletzt am ${esc(fmt.dayMon(co.last.ts))}: ${co.last.sets.map((s) => esc(Gym.fmtSetShort(ex, s)) + (s.rir ? '+' : '')).join(' · ')}</p>
+          <p class="muted small">Der Vorschlag geht davon aus, dass jeder Satz ans Limit ging. War es ausnahmsweise nicht so, tippe auf die Satznummer.</p>
         </div>
         <form data-submit="coachSave" class="form grid2">
           <label>Wiederholungen von<input class="num" type="text" inputmode="numeric" name="min" value="${cfg.min}" autocomplete="off"></label>
@@ -217,7 +241,9 @@
     const rows = en.sets.map((s, si) => {
       const h = hint(en, si, last, coach);
       return `<div class="set-row ${s.done && mode === 'live' ? 'done' : ''}">
-        <span class="set-n">${si + 1}</span>
+        ${ex.kind === 'weight' || ex.kind === 'body'
+          ? `<button class="set-n ${s.rir ? 'res' : ''}" data-act="setEffort" data-e="${ei}" data-s="${si}" aria-label="Satz ${si + 1}${s.rir ? ', nicht am Limit' : ''}. Antippen, um die Anstrengung anzugeben">${si + 1}${s.rir ? '<i>+</i>' : ''}</button>`
+          : `<span class="set-n">${si + 1}</span>`}
         <span class="set-prev">${last && last[si] ? esc(Gym.fmtSetShort(ex, last[si])) : '–'}</span>
         ${fields.map(([f, label]) => `<input class="set-in" type="text" inputmode="decimal" autocomplete="off" data-input="setField" data-e="${ei}" data-s="${si}" data-f="${f}" value="${esc(fmt.input(s[f]))}" placeholder="${esc(fmt.input(h[f]))}" aria-label="Satz ${si + 1}: ${esc(label)}">`).join('')}
         ${mode === 'live' ? `<button class="set-check" data-act="setDone" data-e="${ei}" data-s="${si}" aria-pressed="${s.done ? 'true' : 'false'}" aria-label="Satz ${si + 1} abhaken">${icon.check}</button>` : ''}
@@ -565,7 +591,7 @@
       const ex = Gym.ex(en.exId);
       return `<section class="card entry">
         <div class="entry-head"><div class="li-main"><a class="entry-name" href="#/exercise/${esc(ex.id)}">${esc(ex.name)}</a><small>${esc(ex.muscle)}</small></div></div>
-        <ol class="sets">${en.sets.map((s) => `<li><span>${esc(Gym.fmtSet(ex, s))}</span>${ex.kind === 'weight' && s.r > 1 ? `<small>1RM ≈ ${esc(fmt.num(Gym.e1rm(s.w, s.r), 1))} kg</small>` : ''}</li>`).join('')}</ol>
+        <ol class="sets">${en.sets.map((s) => `<li><span>${esc(Gym.fmtSet(ex, s))}</span>${s.rir ? `<small>${s.rir === 4 ? 'deutlich Reserve' : 'nicht ganz am Limit'}</small>` : ''}${ex.kind === 'weight' && s.r > 1 ? `<small>1RM ≈ ${esc(fmt.num(Gym.e1rm(s.w, s.r), 1))} kg</small>` : ''}</li>`).join('')}</ol>
       </section>`;
     }).join('');
     const body = `
