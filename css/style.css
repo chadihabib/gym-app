@@ -477,3 +477,50 @@ input.set-in { min-height: 40px; padding: 4px; font-weight: 600; font-variant-nu
 .vol-val small { font-size: 11.5px; color: var(--muted); }
 .vol-legend { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
 .vol-legend i { flex: none; width: 18px; height: 12px; background: var(--surface-2); border-left: 1px solid var(--axis); border-right: 1px solid var(--axis); }
+
+/* KI-Coach (Einstellungen) */
+.ai-out { margin: 0; color: var(--text-2); }
+.ai-out.ok { color: var(--good-text); }
+.ai-out.err { color: var(--critical); }
+
+/* KI-Coach (Seite) */
+.ai-card { display: flex; flex-direction: column; gap: 12px; }
+.ai-card .sub { font-size: 12.5px; color: var(--muted); }
+.ai-card .btn { align-self: flex-start; }
+.ai-err { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; border: 1px solid var(--critical); border-radius: 12px; }
+.ai-err p { color: var(--critical); font-weight: 550; }
+.md { display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere; }
+.md p, .md ul, .md ol { margin: 0; }
+.md ul, .md ol { display: flex; flex-direction: column; gap: 3px; padding-left: 20px; }
+.md h3, .md h4, .md h5 { font-size: 15px; font-weight: 650; margin: 4px 0 0; }
+.md strong { font-weight: 650; }
+.chat { display: flex; flex-direction: column; gap: 10px; }
+.chat:empty { display: none; }
+.bubble { max-width: 94%; padding: 10px 13px; border-radius: 16px; overflow-wrap: anywhere; }
+.bubble.me { align-self: flex-end; background: var(--btn); color: #fff; border-bottom-right-radius: 5px; white-space: pre-wrap; }
+.bubble.coach { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 5px; display: flex; flex-direction: column; gap: 8px; }
+.bubble.wide { max-width: 100%; }
+.ai-past { border-bottom: 1px solid var(--border); padding: 4px 0 10px; }
+.ai-past:last-child { border-bottom: 0; }
+.ai-past summary { display: flex; align-items: center; gap: 12px; min-height: 48px; cursor: pointer; list-style: none; }
+.ai-past summary::-webkit-details-marker { display: none; }
+.ai-past summary > .ic { color: var(--muted); }
+.ai-past[open] summary > .ic { transform: rotate(180deg); }
+.ai-past .md { margin: 4px 0 8px; }
+.composer {
+  position: sticky; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 8px); z-index: 10;
+  display: flex; align-items: flex-end; gap: 8px; padding: 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+}
+.composer textarea { flex: 1; min-width: 0; min-height: 44px; max-height: 140px; resize: none; }
+body.has-rest .composer { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 88px); }
+
+/* KI-Aktionen: Training bauen, Nachtragen per Text, Übung einordnen */
+.ai-field { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; font-weight: 550; color: var(--text-2); }
+.ai-busy { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ai-card .ai-busy .btn { align-self: center; }
+.ai-plan { display: flex; flex-direction: column; gap: 10px; }
+.ai-plan .list-item .li-main small + small { margin-top: 2px; }
+.ai-miss strong { color: var(--critical); }
+.ai-exfill { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.ai-exfill[hidden] { display: none; }

@@ -7,7 +7,7 @@
   /* ---------- Speicher ---------- */
   const blank = () => ({
     version: 1,
-    settings: { name: '', theme: 'dark', restSec: 90, restSecBig: 150, phase: 'auto', autoRest: true, sound: true, barKg: 20, heightCm: null, weeklyGoal: 3, lastGymId: null, coach: true },
+    settings: { name: '', theme: 'dark', restSec: 90, restSecBig: 150, phase: 'auto', autoRest: true, sound: true, barKg: 20, heightCm: null, weeklyGoal: 3, lastGymId: null, coach: true, aiModel: 'claude-opus-5-5' },
     gyms: [],       // [{ id, name }]
     exBound: {},    // Übung -> true/false: nur im selben Gym vergleichen (überschreibt die Vorgabe)
     exCoach: {},    // Übung -> { min, max, step }: eigener Wiederholungsbereich und Gewichtsschritt
@@ -17,6 +17,7 @@
     workouts: [],
     active: null,
     body: [],
+    aiReviews: [],  // KI-Wochenrückblicke, neueste zuerst: [{ id, created, weekStart, text, model }]
   });
 
   Gym.load = () => {

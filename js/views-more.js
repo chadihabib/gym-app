@@ -14,6 +14,7 @@
         <div class="card list">
           ${link('#/routines', icon.list, 'Routinen', 'Feste Übungslisten anlegen und starten')}
           ${link('#/plan', icon.calendar, 'Trainingsplan', Gym.S.plan ? 'Aktiv: ' + Gym.S.plan.slots.map((s) => (Gym.type(s.type) || {}).label).join(' · ') : 'Freiwillig: Reihenfolge und Sätze pro Woche')}
+          ${link('#/coach', icon.coach, 'KI-Coach', Gym.ai.enabled() ? 'Wochenrückblick und Fragen an deinen Coach' : 'Freiwillig: Auswertung mit eigenem API-Schlüssel')}
           ${link('#/exercises', icon.dumbbell, 'Übungen', 'Bibliothek, Bestwerte und Verlauf je Übung')}
           ${link('#/gyms', icon.pin, 'Gyms', 'Studios anlegen und Trainings zuordnen')}
           ${link('#/body', icon.scale, 'Körperwerte', 'Gewicht, Körperfett und Maße verfolgen')}
@@ -40,7 +41,7 @@
       body: `
         <section class="card prose">
           <h3>Deine Daten bleiben bei dir</h3>
-          <p>Trainings, Körperwerte, Routinen und Einstellungen speichert die App <strong>nur auf diesem Gerät</strong>, im Speicher deines Browsers. Sie werden an keinen Server übertragen, auch nicht an den Entwickler der App.</p>
+          <p>Trainings, Körperwerte, Routinen und Einstellungen speichert die App <strong>nur auf diesem Gerät</strong>, im Speicher deines Browsers. Solange du den KI-Coach nicht nutzt, werden sie an keinen Server übertragen, auch nicht an den Entwickler der App. Zum KI-Coach siehe unten.</p>
           <p>Die App setzt <strong>keine Cookies</strong>, nutzt <strong>kein Tracking</strong> und keine Werbung und lädt keine Inhalte von Drittanbietern.</p>
         </section>
         <section class="card prose">
@@ -51,6 +52,20 @@
         <section class="card prose">
           <h3>Sichern und löschen</h3>
           <p>Weil nichts auf einem Server liegt, gibt es auch keine Kopie deiner Daten. Unter <a href="#/settings">Einstellungen</a> kannst du eine Sicherung als Datei herunterladen oder alle Daten löschen. Deinstallierst du die App oder löschst du die Browserdaten dieser Seite, sind die Daten ebenfalls weg.</p>
+        </section>
+        <section class="card prose">
+          <h3>KI-Coach (freiwillig)</h3>
+          <ul>
+            <li>Der KI-Coach ist ausgeschaltet, bis du in den <a href="#/settings">Einstellungen</a> einen eigenen API-Schlüssel von Anthropic einträgst.</li>
+            <li>Daten werden nur gesendet, wenn du selbst eine KI-Funktion auslöst: Wochenrückblick, Frage an den Coach, Training für heute, Nachtragen per Text oder eigene Übung mit KI ausfüllen. Nie automatisch im Hintergrund.</li>
+            <li>Empfänger ist Anthropic, der Anbieter des KI-Modells Claude, unter der Adresse <code>api.anthropic.com</code>. Die Anfrage geht direkt von deinem Gerät dorthin. Es gibt keinen Server der Gym App dazwischen.</li>
+            <li>Beim Wochenrückblick, bei Fragen an den Coach und bei „Training für heute“ geht eine Zusammenfassung deiner Daten der letzten Wochen an Anthropic. Dazu gehören Trainings mit Übungen, Gewichten, Wiederholungen und Notizen, die Namen deiner Gyms, Trainingsplan und Einstellungen sowie Körperwerte wie Gewicht, Körperfett und Umfänge. Dazu kommt der Text, den du eingibst. Bei „Nachtragen per Text“ und „Mit KI ausfüllen“ gehen nur dein Text, die Liste der Übungen und die Namen deiner Gyms an Anthropic.</li>
+            <li>Der API-Schlüssel liegt nur im Speicher dieses Browsers auf diesem Gerät. Er ist nicht Teil der Sicherung und wird nur an Anthropic gesendet.</li>
+            <li>Gespeicherte Wochenrückblicke liegen wie alle anderen Daten nur auf dem Gerät.</li>
+            <li>Für die Verarbeitung bei Anthropic gelten dessen Bedingungen. Details stehen in der <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener noreferrer">Datenschutzerklärung von Anthropic</a>.</li>
+            <li>Abschalten: Entferne den Schlüssel unter <a href="#/settings">Einstellungen</a>. Danach wird nichts mehr gesendet.</li>
+          </ul>
+          <p>KI-Antworten sind Richtwerte. Sie können Fehler enthalten und ersetzen keinen ärztlichen Rat.</p>
         </section>
         <section class="card prose">
           <h3>Gesundheitswerte</h3>
@@ -479,9 +494,26 @@
               ${toggle('coach', 'Gewichtsvorschläge', 'Schlägt im Training Gewicht und Wiederholungen vor')}
             </div>
           </div>
+          <div class="sec-head"><h2>KI-Coach</h2></div>
+          <div class="card form">
+            <p class="muted small">Freiwillig. Der KI-Coach braucht Internet und einen eigenen API-Schlüssel von Anthropic (<a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer">console.anthropic.com</a>). Eine Anfrage kostet dort je nach Modell wenige Cent. Bei jeder Anfrage geht eine Zusammenfassung deiner Trainings- und Körperdaten der letzten Wochen an Anthropic (<a href="#/privacy">Datenschutz</a>). Ohne Schlüssel ändert sich an der App nichts.</p>
+            ${Gym.ai.enabled() ? `
+              <div class="list-item static">
+                <span class="li-main"><strong>Schlüssel gespeichert</strong><small>${Gym.ai.key().length > 11 ? 'endet auf …' + esc(Gym.ai.key().slice(-4)) : 'nur auf diesem Gerät'}</small></span>
+                <button class="btn ghost sm" data-act="aiKeyClear">Entfernen</button>
+              </div>` : `
+              <form class="form" data-submit="aiKeySave">
+                <label>API-Schlüssel<input type="password" name="aikey" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk-ant-…" required></label>
+                <button class="btn primary">Schlüssel speichern</button>
+              </form>`}
+            <label>Modell${sel('aiModel', Gym.ai.MODELS.map((m) => [m.id, `${m.name} – ${m.hint}`]), 'str')}</label>
+            <p class="muted small">Kosten sind grobe Schätzungen für eine typische Anfrage. Der Schlüssel liegt nur in diesem Browser und ist nicht Teil der Sicherung.</p>
+            <button class="btn ghost" data-act="aiTest" ${Gym.ai.enabled() ? '' : 'disabled'}>Verbindung testen</button>
+            <p class="small ai-out" id="ai-out" role="status" hidden></p>
+          </div>
           <div class="sec-head"><h2>Daten</h2></div>
           <div class="card">
-            <p class="muted small">Alle Daten liegen nur in diesem Browser auf diesem Gerät und werden nirgendwohin übertragen (<a href="#/privacy">Datenschutz</a>). Sichere sie regelmäßig als Datei, vor allem bevor du Browserdaten löschst.</p>
+            <p class="muted small">Alle Daten liegen nur in diesem Browser auf diesem Gerät. Übertragen wird nur etwas, wenn du den KI-Coach nutzt (<a href="#/privacy">Datenschutz</a>). Sichere sie regelmäßig als Datei, vor allem bevor du Browserdaten löschst.</p>
             <div class="menu">
               <button class="list-item" data-act="exportJson">${icon.download}<span class="li-main"><strong>Sicherung herunterladen</strong><small>Alle Daten als JSON-Datei</small></span></button>
               <button class="list-item" data-act="importPick">${icon.upload}<span class="li-main"><strong>Sicherung einspielen</strong><small>Ersetzt die aktuellen Daten</small></span></button>
@@ -502,6 +534,31 @@
     st[el.dataset.k] = t === 'bool' ? el.checked : t === 'str' ? el.value.trim() : Gym.parseNum(el.value);
     Gym.save();
     if (el.dataset.k === 'theme') Gym.applyTheme();
+  };
+  Gym.act.aiKeySave = (form) => {
+    const k = form.elements.aikey.value.trim();
+    form.elements.aikey.value = '';
+    if (!k) return Gym.toast('Bitte einen Schlüssel eingeben');
+    Gym.ai.setKey(k);
+    Gym.toast(k.startsWith('sk-ant-') ? 'Schlüssel gespeichert' : 'Gespeichert. Schlüssel beginnen normalerweise mit sk-ant-');
+    Gym.render();
+  };
+  Gym.act.aiKeyClear = async () => {
+    const ok = await Gym.confirm('Schlüssel entfernen?', 'Der KI-Coach ist danach aus, bis du wieder einen Schlüssel einträgst.', 'Entfernen', true);
+    if (!ok) return;
+    Gym.ai.clearKey(); Gym.toast('Schlüssel entfernt'); Gym.render();
+  };
+  Gym.act.aiTest = async (el) => {
+    const out = document.getElementById('ai-out');
+    el.disabled = true; out.hidden = false; out.className = 'small ai-out'; out.textContent = 'Teste die Verbindung …';
+    try {
+      const id = await Gym.ai.test();
+      const m = Gym.ai.MODELS.find((x) => id && id.startsWith(x.id));
+      out.className = 'small ai-out ok'; out.textContent = `Verbindung steht: ${m ? m.name : id} antwortet.`;
+    } catch (e) {
+      out.className = 'small ai-out err'; out.textContent = e.kind ? e.message : 'Unerwarteter Fehler beim Testen.';
+    }
+    el.disabled = false;
   };
   Gym.act.exportJson = () => { download(`gymapp-sicherung-${Gym.dayKey(Date.now())}.json`, JSON.stringify(Gym.S, null, 2), 'application/json'); Gym.toast('Sicherung erstellt'); };
   Gym.act.exportCsv = () => {
@@ -533,8 +590,8 @@
     Gym.removeDemo(); Gym.toast('Beispieldaten entfernt'); Gym.render();
   };
   Gym.act.wipe = async () => {
-    const ok = await Gym.confirm('Wirklich alles löschen?', 'Trainings, Routinen, Körperwerte und Einstellungen werden unwiderruflich gelöscht.', 'Alles löschen', true);
+    const ok = await Gym.confirm('Wirklich alles löschen?', 'Trainings, Routinen, Körperwerte und Einstellungen werden unwiderruflich gelöscht. Ein gespeicherter KI-Schlüssel wird ebenfalls entfernt.', 'Alles löschen', true);
     if (!ok) return;
-    Gym.resetAll(); Gym.applyTheme(); Gym.toast('App zurückgesetzt'); Gym.go('#/home');
+    Gym.resetAll(); Gym.ai.clearKey(); Gym.applyTheme(); Gym.toast('App zurückgesetzt'); Gym.go('#/home');
   };
 })();

@@ -231,6 +231,7 @@
       title: ex ? 'Übung bearbeiten' : 'Eigene Übung',
       body: `<form data-submit="exFormSave" class="form">
         <label>Name<input name="name" required maxlength="60" value="${esc(ex ? ex.name : '')}" autocomplete="off"></label>
+        ${Gym.aiExFill ? Gym.aiExFill(ex) : ''}
         <label>Muskelgruppe<select name="muscle">${opt(Gym.MUSCLES, ex ? ex.muscle : 'Brust')}</select></label>
         <label>Gerät<select name="equip">${opt(Gym.EQUIPMENT, ex ? ex.equip : 'Langhantel')}</select></label>
         <label>Bei Beinen oder Schultern: welcher Teil?<select name="part"><option value="">Automatisch</option>${[].concat(Gym.PARTS.Beine, Gym.PARTS.Schultern).map((p) => `<option ${ex && ex.part === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>

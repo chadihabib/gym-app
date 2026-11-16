@@ -119,6 +119,7 @@
         ${tile('Volumen diese Woche', esc(fmt.kg(vNow)), delta)}
         ${tile('Trainings gesamt', `${S.workouts.length}`, S.workouts.length ? `<span class="delta">seit ${esc(fmt.dayMonY(Gym.sorted()[0].start))}</span>` : '')}
       </div>
+      ${Gym.ai.enabled() ? `<a class="card ai-entry" href="#/coach"><span class="li-icon">${icon.coach}</span><span class="li-main"><strong>Wochenrückblick</strong><small>KI-Coach: Auswertung deiner Woche</small></span>${icon.right}</a>` : ''}
       ${S.active ? '' : startSection()}
       ${S.workouts.length ? `
         ${Gym.charts.card('cal', 'Trainingskalender', 'Sätze pro Tag in den letzten Wochen')}
@@ -621,7 +622,7 @@
         body += Gym.workoutCard(w);
       }
     }
-    return { html: Gym.page({ title: 'Verlauf', actions: `<button class="btn ghost sm" data-act="logPast">${icon.plus} Nachtragen</button>`, body }) };
+    return { html: Gym.page({ title: 'Verlauf', actions: `${Gym.ai.enabled() ? `<a class="btn ghost sm" href="#/log-text" aria-label="Per Text nachtragen">${icon.edit} Per Text</a>` : ''}<button class="btn ghost sm" data-act="logPast">${icon.plus} Nachtragen</button>`, body }) };
   });
 
   Gym.route('/history/([^/]+)', 'history', (id) => {
